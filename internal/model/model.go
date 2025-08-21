@@ -1,5 +1,11 @@
 package model
 
+import (
+	"encoding/json"
+	"fmt"
+	"time"
+)
+
 // AuthMethod represents the authentication method used
 type AuthMethod string
 
@@ -28,7 +34,8 @@ const (
 
 // PublishRequest represents a request to publish a server to the registry
 type PublishRequest struct {
-	ServerDetail `json:",inline"`
+	Server     ServerDetail           `json:"server"`
+	XPublisher map[string]interface{} `json:"x-publisher,omitempty"`
 }
 
 // Repository represents a source code repository as defined in the spec
@@ -129,4 +136,58 @@ type ServerDetail struct {
 	Server   `json:",inline" bson:",inline"`
 	Packages []Package `json:"packages,omitempty" bson:"packages,omitempty"`
 	Remotes  []Remote  `json:"remotes,omitempty" bson:"remotes,omitempty"`
+	// PublisherExtensions stores publisher-provided extension data (not exposed in JSON)
+	PublisherExtensions map[string]interface{} `json:"-" bson:"publisher_extensions,omitempty"`
+}
+
+// RegistryMetadata represents registry-generated metadata
+type RegistryMetadata struct {
+	IsLatest       bool      `json:"is_latest"`
+	PublishedAt    time.Time `json:"published_at"`
+	TotalDownloads int       `json:"total_downloads,omitempty"`
+}
+
+// ServerWithExtensions wraps ServerDetail with extension support for API responses
+type ServerWithExtensions struct {
+	Server ServerDetail `json:"server"`
+	// Registry metadata extension
+	RegistryExtension *RegistryMetadata `json:"x-io.modelcontextprotocol.registry,omitempty"`
+	// Additional extensions can be added dynamically
+	Extensions map[string]json.RawMessage `json:",inline"`
+}
+
+// PublisherExtensions represents publisher-provided extension data
+type PublisherExtensions struct {
+	ContactEmail  string                 `json:"contact_email,omitempty"`
+	BuildMetadata map[string]interface{} `json:"build_metadata,omitempty"`
+	// Allow arbitrary publisher data
+	AdditionalData map[string]interface{} `json:",inline"`
+}
+
+// Extension validation constants
+const (
+	// MaxPublisherExtensionSize limits the size of publisher extensions (4KB)
+	MaxPublisherExtensionSize = 4 * 1024
+	// RegistryExtensionNamespace is the official registry extension namespace
+	RegistryExtensionNamespace = "x-io.modelcontextprotocol.registry"
+	// PublisherExtensionNamespace is the allowed namespace for publishers
+	PublisherExtensionNamespace = "x-publisher"
+)
+
+// ValidatePublisherExtensionSize validates that publisher extensions don't exceed size limits
+func ValidatePublisherExtensionSize(extensions map[string]interface{}) error {
+	if extensions == nil {
+		return nil
+	}
+
+	data, err := json.Marshal(extensions)
+	if err != nil {
+		return err
+	}
+
+	if len(data) > MaxPublisherExtensionSize {
+		return fmt.Errorf("publisher extensions exceed maximum size of %d bytes", MaxPublisherExtensionSize)
+	}
+
+	return nil
 }

@@ -54,7 +54,7 @@ func TestPublishIntegration(t *testing.T) {
 
 	t.Run("successful publish with GitHub auth", func(t *testing.T) {
 		publishReq := model.PublishRequest{
-			ServerDetail: model.ServerDetail{
+			Server: model.ServerDetail{
 				Server: model.Server{
 					Name:        "io.github.testuser/test-mcp-server",
 					Description: "A test MCP server for integration testing",
@@ -98,13 +98,13 @@ func TestPublishIntegration(t *testing.T) {
 		err = json.Unmarshal(rr.Body.Bytes(), &response)
 		require.NoError(t, err)
 
-		assert.Equal(t, publishReq.Name, response.Name)
-		assert.Equal(t, publishReq.VersionDetail.Version, response.VersionDetail.Version)
+		assert.Equal(t, publishReq.Server.Name, response.Name)
+		assert.Equal(t, publishReq.Server.VersionDetail.Version, response.VersionDetail.Version)
 	})
 
 	t.Run("successful publish without auth (no prefix)", func(t *testing.T) {
 		publishReq := model.PublishRequest{
-			ServerDetail: model.ServerDetail{
+			Server: model.ServerDetail{
 				Server: model.Server{
 					Name:        "test-mcp-server-no-auth",
 					Description: "A test MCP server without authentication",
@@ -146,12 +146,12 @@ func TestPublishIntegration(t *testing.T) {
 		err = json.Unmarshal(rr.Body.Bytes(), &response)
 		require.NoError(t, err)
 
-		assert.Equal(t, publishReq.Name, response.Name)
+		assert.Equal(t, publishReq.Server.Name, response.Name)
 	})
 
 	t.Run("publish fails with missing authorization header", func(t *testing.T) {
 		publishReq := model.PublishRequest{
-			ServerDetail: model.ServerDetail{
+			Server: model.ServerDetail{
 				Server: model.Server{
 					Name: "test-server",
 				},
@@ -174,7 +174,7 @@ func TestPublishIntegration(t *testing.T) {
 
 	t.Run("publish fails with invalid token", func(t *testing.T) {
 		publishReq := model.PublishRequest{
-			ServerDetail: model.ServerDetail{
+			Server: model.ServerDetail{
 				Server: model.Server{
 					Name: "test-server",
 				},
@@ -197,7 +197,7 @@ func TestPublishIntegration(t *testing.T) {
 
 	t.Run("publish fails when permission denied", func(t *testing.T) {
 		publishReq := model.PublishRequest{
-			ServerDetail: model.ServerDetail{
+			Server: model.ServerDetail{
 				Server: model.Server{
 					Name:        "io.github.other/test-server",
 					Description: "A test server",

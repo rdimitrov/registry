@@ -1,6 +1,7 @@
 {
-    "description": "<your description here>",
-    "name": "io.github.<owner>/<server-name>",
+    "server": {
+        "description": "<your description here>",
+        "name": "io.github.<owner>/<server-name>",
     "status": "active",
     "packages": [
         {
@@ -48,12 +49,20 @@
             ]
         }
     ],
-    "repository": {
-        "url": "https://github.com/<owner>/<server-name>",
-        "source": "github",
-        "id": "c8d4c3b6-7943-474d-8e14-b53ab876a56a"
+        "repository": {
+            "url": "https://github.com/<owner>/<server-name>",
+            "source": "github",
+            "id": "c8d4c3b6-7943-474d-8e14-b53ab876a56a"
+        },
+        "version_detail": {
+            "version": "0.0.1-<publisher_version>"
+        }
     },
-    "version_detail": {
-        "version": "0.0.1-<publisher_version>"
+    "x-publisher": {
+        "contact_email": "<your-email@example.com>",
+        "build_metadata": {
+            "commit": "<git-commit-sha>",
+            "timestamp": "<build-timestamp>"
+        }
     }
 }

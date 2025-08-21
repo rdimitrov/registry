@@ -2,7 +2,9 @@ package v0
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -85,7 +87,7 @@ func RegisterServersEndpoints(api huma.API, registry service.RegistryService) {
 		Summary:     "Get MCP server details",
 		Description: "Get detailed information about a specific MCP server",
 		Tags:        []string{"servers"},
-	}, func(_ context.Context, input *ServerDetailInput) (*Response[model.ServerDetail], error) {
+	}, func(_ context.Context, input *ServerDetailInput) (*Response[model.ServerWithExtensions], error) {
 		// Get the server details from the registry service
 		serverDetail, err := registry.GetByID(input.ID)
 		if err != nil {
@@ -95,8 +97,30 @@ func RegisterServersEndpoints(api huma.API, registry service.RegistryService) {
 			return nil, huma.Error500InternalServerError("Failed to get server details", err)
 		}
 
-		return &Response[model.ServerDetail]{
-			Body: *serverDetail,
+		// Create registry metadata
+		registryMetadata := &model.RegistryMetadata{
+			IsLatest:       true, // TODO: Implement proper version tracking
+			PublishedAt:    time.Now(), // TODO: Use actual publish time from database
+			TotalDownloads: 0,    // TODO: Implement download tracking
+		}
+
+		// Wrap server detail with extensions
+		serverWithExtensions := model.ServerWithExtensions{
+			Server:            *serverDetail,
+			RegistryExtension: registryMetadata,
+			Extensions:        make(map[string]json.RawMessage),
+		}
+
+		// Add publisher extensions if they exist
+		if serverDetail.PublisherExtensions != nil {
+			publisherExtJSON, err := json.Marshal(serverDetail.PublisherExtensions)
+			if err == nil {
+				serverWithExtensions.Extensions[model.PublisherExtensionNamespace] = publisherExtJSON
+			}
+		}
+
+		return &Response[model.ServerWithExtensions]{
+			Body: serverWithExtensions,
 		}, nil
 	})
 }

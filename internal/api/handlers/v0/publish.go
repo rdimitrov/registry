@@ -48,8 +48,18 @@ func RegisterPublishEndpoint(api huma.API, registry service.RegistryService, cfg
 			return nil, huma.Error401Unauthorized("Invalid or expired Registry JWT token", err)
 		}
 
-		// Convert PublishRequest body to ServerDetail
-		serverDetail := input.Body.ServerDetail
+		// Validate publisher extensions size
+		if err := model.ValidatePublisherExtensionSize(input.Body.XPublisher); err != nil {
+			return nil, huma.Error400BadRequest("Invalid publisher extensions", err)
+		}
+
+		// Extract ServerDetail from nested structure
+		serverDetail := input.Body.Server
+
+		// Store publisher extensions if provided
+		if input.Body.XPublisher != nil {
+			serverDetail.PublisherExtensions = input.Body.XPublisher
+		}
 
 		// Verify that the token's repository matches the server being published
 		if !jwtManager.HasPermission(serverDetail.Name, auth.PermissionActionPublish, claims.Permissions) {

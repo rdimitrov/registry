@@ -339,13 +339,16 @@ func TestServersDetailEndpoint(t *testing.T) {
 				assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
 
 				// Parse response body
-				var serverDetailResp model.ServerDetail
+				var serverDetailResp model.ServerWithExtensions
 				err := json.NewDecoder(w.Body).Decode(&serverDetailResp)
 				assert.NoError(t, err)
 
 				// Check that we got a valid response
-				assert.NotEmpty(t, serverDetailResp.ID)
-				assert.NotEmpty(t, serverDetailResp.Name)
+				assert.NotEmpty(t, serverDetailResp.Server.ID)
+				assert.NotEmpty(t, serverDetailResp.Server.Name)
+				// Check registry extension
+				assert.NotNil(t, serverDetailResp.RegistryExtension)
+				assert.True(t, serverDetailResp.RegistryExtension.IsLatest)
 			} else if tc.expectedError != "" {
 				// Check error message for non-200 responses
 				assert.Contains(t, w.Body.String(), tc.expectedError)
@@ -455,12 +458,15 @@ func TestServersEndpointsIntegration(t *testing.T) {
 		assert.Equal(t, "application/json", resp.Header.Get("Content-Type"))
 
 		// Parse response body
-		var serverDetailResp model.ServerDetail
+		var serverDetailResp model.ServerWithExtensions
 		err = json.NewDecoder(resp.Body).Decode(&serverDetailResp)
 		assert.NoError(t, err)
 
-		// Check the response data
-		assert.Equal(t, *serverDetail, serverDetailResp)
+		// Check the response data (server should be wrapped in extensions format)
+		assert.Equal(t, *serverDetail, serverDetailResp.Server)
+		// Check that registry metadata is present
+		assert.NotNil(t, serverDetailResp.RegistryExtension)
+		assert.True(t, serverDetailResp.RegistryExtension.IsLatest)
 	})
 
 	// Verify mock expectations
