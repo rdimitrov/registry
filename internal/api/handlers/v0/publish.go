@@ -104,15 +104,13 @@ func RegisterPublishEndpoint(api huma.API, registry service.RegistryService, cfg
 
 		// Create wrapper response format
 		response := model.ServerResponse{
-			Server:     record.ServerJSON,
-			Extensions: map[string]interface{}{
-				"x-io.modelcontextprotocol.registry": record.RegistryMetadata,
-			},
+			Server: record.ServerJSON,
+			XIOModelContextProtocolRegistry: record.RegistryMetadata,
 		}
 		
 		// Add publisher extensions if present
-		for key, value := range record.PublisherExtensions {
-			response.Extensions[key] = value
+		if publisherData, exists := record.PublisherExtensions["x-publisher"]; exists {
+			response.XPublisher = publisherData
 		}
 
 		return &Response[model.ServerResponse]{

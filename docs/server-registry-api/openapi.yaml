@@ -34,7 +34,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ServerList'
+                $ref: '#/components/schemas/ServerResponseList'
   /servers/{id}:
     get:
       summary: Get MCP server details
@@ -58,7 +58,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ServerDetail'
+                $ref: '#/components/schemas/ServerResponse'
         '404':
           description: Server not found
           content:
@@ -69,7 +69,61 @@ paths:
                   error:
                     type: string
                     example: "Server not found"
+  /publish:
+    post:
+      summary: Publish MCP server
+      description: Publish a new MCP server to the registry or update an existing one
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublishRequest'
+      responses:
+        '200':
+          description: Server published successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServerResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Invalid extensions: only 'x-publisher' extensions are allowed"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Invalid or expired Registry JWT token"
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "You do not have permission to publish this server"
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
   schemas:
     Repository:
       type: object
@@ -354,3 +408,96 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/Remote'
+
+    PublishRequest:
+      type: object
+      required:
+        - server
+      properties:
+        server:
+          type: object
+          description: Raw MCP server.json specification (immutable)
+          example: |
+            {
+              "name": "example/mcp-server",
+              "description": "An example MCP server",
+              "version_detail": {
+                "version": "1.0.0"
+              }
+            }
+        x-publisher:
+          type: object
+          description: Publisher-specific extensions (optional, 4KB max)
+          example: |
+            {
+              "author": "Example Publisher",
+              "homepage": "https://example.com"
+            }
+
+    ServerResponse:
+      type: object
+      required:
+        - server
+      properties:
+        server:
+          type: object
+          description: Raw MCP server.json specification (immutable)
+        x-io.modelcontextprotocol.registry:
+          $ref: '#/components/schemas/RegistryMetadata'
+          description: Registry-generated metadata (always present in responses)
+        x-publisher:
+          type: object
+          description: Publisher-specific extensions (if present)
+
+    ServerResponseList:
+      type: object
+      required:
+        - servers
+      properties:
+        servers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServerResponse'
+        metadata:
+          type: object
+          properties:
+            next_cursor:
+              type: string
+              description: Cursor for next page of results
+            count:
+              type: integer
+              description: Number of items in current page
+              example: 30
+
+    RegistryMetadata:
+      type: object
+      required:
+        - id
+        - published_at
+        - is_latest
+        - release_date
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique registry-generated ID
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        published_at:
+          type: string
+          format: date-time
+          description: When the server was first published to the registry
+          example: "2023-06-15T10:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: When the server was last updated in the registry
+          example: "2023-06-15T10:30:00Z"
+        is_latest:
+          type: boolean
+          description: Whether this is the latest version
+          example: true
+        release_date:
+          type: string
+          format: date-time
+          description: When the server version was released
+          example: "2023-06-15T10:30:00Z"

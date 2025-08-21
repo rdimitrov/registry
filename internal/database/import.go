@@ -19,7 +19,7 @@ import (
 // 1. Local file paths (*.json files)
 // 2. Direct HTTP URLs to seed.json files
 // 3. Registry root URLs (automatically appends /v0/servers and paginates)
-func ReadSeedFile(ctx context.Context, path string) ([]model.ServerDetail, error) {
+func ReadSeedFile(ctx context.Context, path string) ([]model.ServerRecord, error) {
 	log.Printf("Reading seed data from %s", path)
 
 	// Set default seed file path if not provided
@@ -83,15 +83,37 @@ func readFromHTTP(ctx context.Context, url string) ([]byte, error) {
 	return body, nil
 }
 
-// parseSeedJSON parses JSON content into ServerDetail objects
-func parseSeedJSON(fileContent []byte) ([]model.ServerDetail, error) {
-	var servers []model.ServerDetail
-	if err := json.Unmarshal(fileContent, &servers); err != nil {
-		// Try parsing as a raw JSON array and then convert to our model
-		var rawData []map[string]any
-		if jsonErr := json.Unmarshal(fileContent, &rawData); jsonErr != nil {
-			return nil, fmt.Errorf("failed to parse JSON: %w (original error: %w)", jsonErr, err)
+// parseSeedJSON parses JSON content from ServerResponse format into ServerRecord objects
+func parseSeedJSON(fileContent []byte) ([]model.ServerRecord, error) {
+	var serverResponses []model.ServerResponse
+	if err := json.Unmarshal(fileContent, &serverResponses); err != nil {
+		return nil, fmt.Errorf("failed to parse seed JSON as ServerResponse format: %w", err)
+	}
+
+	// Convert ServerResponse format to ServerRecord format
+	var servers []model.ServerRecord
+	for _, serverResponse := range serverResponses {
+		record := model.ServerRecord{
+			ServerJSON:          serverResponse.Server,
+			PublisherExtensions: make(map[string]interface{}),
 		}
+		
+		// Extract registry metadata
+		if serverResponse.XIOModelContextProtocolRegistry != nil {
+			if metaBytes, err := json.Marshal(serverResponse.XIOModelContextProtocolRegistry); err == nil {
+				var metadata model.RegistryMetadata
+				if err := json.Unmarshal(metaBytes, &metadata); err == nil {
+					record.RegistryMetadata = metadata
+				}
+			}
+		}
+		
+		// Extract publisher extensions
+		if serverResponse.XPublisher != nil {
+			record.PublisherExtensions["x-publisher"] = serverResponse.XPublisher
+		}
+		
+		servers = append(servers, record)
 	}
 
 	log.Printf("Found %d server entries in seed data", len(servers))
@@ -101,8 +123,8 @@ func parseSeedJSON(fileContent []byte) ([]model.ServerDetail, error) {
 // PaginatedResponse represents the paginated response from /v0/servers endpoint
 // PaginatedResponse represents the structure of a paginated response from /v0/servers endpoint
 type PaginatedResponse struct {
-	Data     []model.ServerDetail `json:"servers"`
-	Metadata Metadata             `json:"metadata,omitempty"`
+	Data     []model.ServerResponse `json:"servers"`
+	Metadata Metadata               `json:"metadata,omitempty"`
 }
 
 // Metadata contains pagination metadata
@@ -114,7 +136,61 @@ type Metadata struct {
 
 // readFromRegistryWithContext reads all servers from a registry by paginating through /v0/servers endpoint
 // readFromRegistryWithContext reads all servers from a registry by paginating through /v0/servers endpoint
-func readFromRegistryWithContext(ctx context.Context, registryURL string) ([]model.ServerDetail, error) {
-	// TODO: Update for new wrapper API format after Phase 4 completion
-	return nil, fmt.Errorf("registry import not yet updated for new API format")
+func readFromRegistryWithContext(ctx context.Context, registryURL string) ([]model.ServerRecord, error) {
+	var allServers []model.ServerRecord
+	cursor := ""
+	
+	for {
+		// Build URL with cursor if we have one
+		url := strings.TrimSuffix(registryURL, "/") + "/v0/servers"
+		if cursor != "" {
+			url += "?cursor=" + cursor
+		}
+		
+		// Fetch the page
+		data, err := readFromHTTP(ctx, url)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read page from registry: %w", err)
+		}
+		
+		// Parse the response
+		var response PaginatedResponse  
+		if err := json.Unmarshal(data, &response); err != nil {
+			return nil, fmt.Errorf("failed to parse registry response: %w", err)
+		}
+		
+		// Convert ServerResponse back to ServerRecord
+		for _, serverResponse := range response.Data {
+			record := model.ServerRecord{
+				ServerJSON:          serverResponse.Server,
+				PublisherExtensions: make(map[string]interface{}),
+			}
+			
+			// Extract registry metadata
+			if serverResponse.XIOModelContextProtocolRegistry != nil {
+				if metaBytes, err := json.Marshal(serverResponse.XIOModelContextProtocolRegistry); err == nil {
+					var metadata model.RegistryMetadata
+					if err := json.Unmarshal(metaBytes, &metadata); err == nil {
+						record.RegistryMetadata = metadata
+					}
+				}
+			}
+			
+			// Extract publisher extensions
+			if serverResponse.XPublisher != nil {
+				record.PublisherExtensions["x-publisher"] = serverResponse.XPublisher
+			}
+			
+			allServers = append(allServers, record)
+		}
+		
+		// Check if there are more pages
+		if response.Metadata.NextCursor == "" {
+			break
+		}
+		cursor = response.Metadata.NextCursor
+	}
+	
+	log.Printf("Retrieved %d servers from registry", len(allServers))
+	return allServers, nil
 }

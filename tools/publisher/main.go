@@ -101,6 +101,7 @@ func publishCommand() error {
 	var dnsPrivateKey string
 	var httpDomain string
 	var httpPrivateKey string
+	var publisherData string
 
 	// Command-line flags for configuration
 	publishFlags.StringVar(&registryURL, "registry-url", "", "URL of the registry (required)")
@@ -111,6 +112,7 @@ func publishCommand() error {
 	publishFlags.StringVar(&dnsPrivateKey, "dns-private-key", "", "64-character hex seed for DNS authentication (required for dns auth method)")
 	publishFlags.StringVar(&httpDomain, "http-domain", "", "domain name for HTTP authentication (required for http auth method)")
 	publishFlags.StringVar(&httpPrivateKey, "http-private-key", "", "64-character hex seed for HTTP authentication (required for http auth method)")
+	publishFlags.StringVar(&publisherData, "publisher-data", "", "JSON string for x-publisher extensions (optional)")
 
 	// Set custom usage function
 	publishFlags.Usage = func() {
@@ -127,6 +129,7 @@ func publishCommand() error {
 		fmt.Fprint(os.Stdout, "  --dns-private-key string    64-character hex seed for DNS authentication\n")
 		fmt.Fprint(os.Stdout, "  --http-domain string        domain name for HTTP authentication\n")
 		fmt.Fprint(os.Stdout, "  --http-private-key string   64-character hex seed for HTTP authentication\n")
+		fmt.Fprint(os.Stdout, "  --publisher-data string     JSON string for x-publisher extensions (optional)\n")
 	}
 
 	if err := publishFlags.Parse(os.Args[2:]); err != nil {
@@ -181,7 +184,7 @@ func publishCommand() error {
 	}
 
 	// Publish to registry
-	err = publishToRegistry(registryURL, mcpData, token)
+	err = publishToRegistry(registryURL, mcpData, token, publisherData)
 	if err != nil {
 		return fmt.Errorf("failed to publish to registry: %w", err)
 	}
@@ -336,16 +339,28 @@ func createCommand() error {
 }
 
 // publishToRegistry sends the MCP server details to the registry with authentication
-func publishToRegistry(registryURL string, mcpData []byte, token string) error {
-	// Parse the MCP JSON data
+func publishToRegistry(registryURL string, mcpData []byte, token string, publisherData string) error {
+	// Validate the MCP JSON data by parsing it
 	var mcpDetails map[string]any
 	err := json.Unmarshal(mcpData, &mcpDetails)
 	if err != nil {
 		return fmt.Errorf("error parsing server.json file: %w", err)
 	}
 
-	// Create the publish request payload (without authentication)
-	publishReq := mcpDetails
+	// Create the publish request payload using the new wrapper format
+	publishReq := map[string]any{
+		"server": json.RawMessage(mcpData), // Raw MCP server.json (immutable)
+	}
+
+	// Add x-publisher extensions if provided
+	if publisherData != "" {
+		var publisherExtensions map[string]interface{}
+		err := json.Unmarshal([]byte(publisherData), &publisherExtensions)
+		if err != nil {
+			return fmt.Errorf("error parsing publisher data JSON: %w", err)
+		}
+		publishReq["Extensions"] = publisherExtensions
+	}
 
 	// Convert the request to JSON
 	jsonData, err := json.Marshal(publishReq)

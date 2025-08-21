@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 // AuthMethod represents the authentication method used
@@ -32,7 +33,6 @@ const (
 	// ServerStatusDeprecated represents a server that is no longer actively maintained
 	ServerStatusDeprecated ServerStatus = "deprecated"
 )
-
 
 // Repository represents a source code repository as defined in the spec
 type Repository struct {
@@ -142,10 +142,59 @@ type ServerRecord struct {
 	PublisherExtensions map[string]interface{} `bson:"publisher_extensions"` // x-publisher extensions
 }
 
-// ServerResponse represents the API response format with wrapper and extensions
+// MarshalBSON implements custom BSON marshaling for ServerRecord
+func (sr *ServerRecord) MarshalBSON() ([]byte, error) {
+	// Parse ServerJSON as interface{} for BSON storage
+	var serverJSONDoc interface{}
+	if len(sr.ServerJSON) > 0 {
+		if err := json.Unmarshal(sr.ServerJSON, &serverJSONDoc); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal ServerJSON for BSON: %w", err)
+		}
+	}
+	
+	// Create a document with the parsed server_json
+	doc := bson.M{
+		"server_json":          serverJSONDoc,
+		"registry_metadata":    sr.RegistryMetadata,
+		"publisher_extensions": sr.PublisherExtensions,
+	}
+	
+	return bson.Marshal(doc)
+}
+
+// UnmarshalBSON implements custom BSON unmarshaling for ServerRecord
+func (sr *ServerRecord) UnmarshalBSON(data []byte) error {
+	// Unmarshal into a temporary structure
+	var temp struct {
+		ServerJSON          interface{}            `bson:"server_json"`
+		RegistryMetadata    RegistryMetadata       `bson:"registry_metadata"`
+		PublisherExtensions map[string]interface{} `bson:"publisher_extensions"`
+	}
+	
+	if err := bson.Unmarshal(data, &temp); err != nil {
+		return err
+	}
+	
+	// Convert server_json back to json.RawMessage
+	if temp.ServerJSON != nil {
+		serverJSONBytes, err := json.Marshal(temp.ServerJSON)
+		if err != nil {
+			return fmt.Errorf("failed to marshal server_json back to RawMessage: %w", err)
+		}
+		sr.ServerJSON = json.RawMessage(serverJSONBytes)
+	}
+	
+	sr.RegistryMetadata = temp.RegistryMetadata
+	sr.PublisherExtensions = temp.PublisherExtensions
+	
+	return nil
+}
+
+// ServerResponse represents the API response format with wrapper and extensions at top level
 type ServerResponse struct {
-	Server     json.RawMessage        `json:"server"`
-	Extensions map[string]interface{} `json:",inline"`
+	Server                          json.RawMessage `json:"server"`
+	XIOModelContextProtocolRegistry interface{}     `json:"x-io.modelcontextprotocol.registry,omitempty"`
+	XPublisher                      interface{}     `json:"x-publisher,omitempty"`
 }
 
 // ServerListResponse represents the paginated server list response
@@ -157,7 +206,7 @@ type ServerListResponse struct {
 // PublishRequest represents the API request format for publishing servers
 type PublishRequest struct {
 	Server     json.RawMessage        `json:"server"`
-	Extensions map[string]interface{} `json:",inline"`
+	Extensions map[string]interface{} `json:"Extensions,omitempty"`
 }
 
 // Metadata represents pagination metadata
@@ -212,19 +261,4 @@ func (rm *RegistryMetadata) CreateRegistryExtensions() map[string]interface{} {
 			"release_date": rm.ReleaseDate,
 		},
 	}
-}
-
-// ParseServerName extracts the server name from raw server JSON for validation purposes
-func ParseServerName(serverJSON json.RawMessage) (string, error) {
-	var serverData map[string]interface{}
-	if err := json.Unmarshal(serverJSON, &serverData); err != nil {
-		return "", fmt.Errorf("invalid server JSON format: %w", err)
-	}
-
-	name, ok := serverData["name"].(string)
-	if !ok || name == "" {
-		return "", fmt.Errorf("server name is required and must be a string")
-	}
-
-	return name, nil
 }

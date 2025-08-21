@@ -25,8 +25,8 @@ type ListServersInput struct {
 
 // ListServersBody represents the paginated server list response body
 type ListServersBody struct {
-	Servers  []model.Server `json:"servers" doc:"List of MCP servers"`
-	Metadata *Metadata      `json:"metadata,omitempty" doc:"Pagination metadata"`
+	Servers  []model.ServerResponse `json:"servers" doc:"List of MCP servers"`
+	Metadata *Metadata              `json:"metadata,omitempty" doc:"Pagination metadata"`
 }
 
 // ServerDetailInput represents the input for getting server details
@@ -54,9 +54,23 @@ func RegisterServersEndpoints(api huma.API, registry service.RegistryService) {
 		}
 
 		// Get paginated results
-		servers, nextCursor, err := registry.List(input.Cursor, input.Limit)
+		serverRecords, nextCursor, err := registry.List(input.Cursor, input.Limit)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("Failed to get registry list", err)
+		}
+
+		// Convert ServerRecord to ServerResponse wrapper format
+		servers := make([]model.ServerResponse, len(serverRecords))
+		for i, record := range serverRecords {
+			servers[i] = model.ServerResponse{
+				Server: record.ServerJSON,
+				XIOModelContextProtocolRegistry: record.RegistryMetadata,
+			}
+			
+			// Add publisher extensions if present
+			if publisherData, exists := record.PublisherExtensions["x-publisher"]; exists {
+				servers[i].XPublisher = publisherData
+			}
 		}
 
 		// Build response body
@@ -85,9 +99,9 @@ func RegisterServersEndpoints(api huma.API, registry service.RegistryService) {
 		Summary:     "Get MCP server details",
 		Description: "Get detailed information about a specific MCP server",
 		Tags:        []string{"servers"},
-	}, func(_ context.Context, input *ServerDetailInput) (*Response[model.ServerDetail], error) {
-		// Get the server details from the registry service
-		serverDetail, err := registry.GetByID(input.ID)
+	}, func(_ context.Context, input *ServerDetailInput) (*Response[model.ServerResponse], error) {
+		// Get the server record from the registry service
+		serverRecord, err := registry.GetByID(input.ID)
 		if err != nil {
 			if err.Error() == "record not found" {
 				return nil, huma.Error404NotFound("Server not found")
@@ -95,8 +109,19 @@ func RegisterServersEndpoints(api huma.API, registry service.RegistryService) {
 			return nil, huma.Error500InternalServerError("Failed to get server details", err)
 		}
 
-		return &Response[model.ServerDetail]{
-			Body: *serverDetail,
+		// Convert ServerRecord to ServerResponse wrapper format
+		response := model.ServerResponse{
+			Server: serverRecord.ServerJSON,
+			XIOModelContextProtocolRegistry: serverRecord.RegistryMetadata,
+		}
+		
+		// Add publisher extensions if present
+		if publisherData, exists := serverRecord.PublisherExtensions["x-publisher"]; exists {
+			response.XPublisher = publisherData
+		}
+
+		return &Response[model.ServerResponse]{
+			Body: response,
 		}, nil
 	})
 }

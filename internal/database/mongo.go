@@ -43,15 +43,31 @@ func NewMongoDB(ctx context.Context, connectionURI, databaseName, collectionName
 	// Create indexes for better query performance
 	models := []mongo.IndexModel{
 		{
-			Keys: bson.D{bson.E{Key: "name", Value: 1}},
-		},
-		{
-			Keys:    bson.D{bson.E{Key: "id", Value: 1}},
+			// Index on registry metadata ID for individual server lookups and pagination
+			Keys:    bson.D{bson.E{Key: "registry_metadata._id", Value: 1}},
 			Options: options.Index().SetUnique(true),
 		},
-		// add an index for the combination of name and version
 		{
-			Keys:    bson.D{bson.E{Key: "name", Value: 1}, bson.E{Key: "version_detail.version", Value: 1}},
+			// Index on is_latest for filtering current versions
+			Keys: bson.D{bson.E{Key: "registry_metadata.is_latest", Value: 1}},
+		},
+		{
+			// Compound index for is_latest + ID for efficient pagination
+			Keys: bson.D{
+				bson.E{Key: "registry_metadata.is_latest", Value: 1},
+				bson.E{Key: "registry_metadata._id", Value: 1},
+			},
+		},
+		{
+			// Index on server name for lookups
+			Keys: bson.D{bson.E{Key: "server_json.name", Value: 1}},
+		},
+		{
+			// Unique index on name + version for preventing duplicates
+			Keys: bson.D{
+				bson.E{Key: "server_json.name", Value: 1},
+				bson.E{Key: "server_json.version_detail.version", Value: 1},
+			},
 			Options: options.Index().SetUnique(true),
 		},
 	}
@@ -281,8 +297,34 @@ func (db *MongoDB) Publish(ctx context.Context, serverJSON []byte, publisherExte
 
 // ImportSeed imports initial data from a seed file into MongoDB
 func (db *MongoDB) ImportSeed(ctx context.Context, seedFilePath string) error {
-	// TODO: Update ImportSeed for ServerRecord model after Phase 8 (seed data update)
-	return fmt.Errorf("MongoDB ImportSeed not yet updated for ServerRecord model")
+	// Read the migrated seed data (should be in ServerRecord format)
+	seedRecords, err := ReadSeedFile(ctx, seedFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to read seed file: %w", err)
+	}
+
+	// Clear existing data
+	_, err = db.collection.DeleteMany(ctx, bson.M{})
+	if err != nil {
+		return fmt.Errorf("failed to clear existing data: %w", err)
+	}
+
+	// Insert all seed records
+	if len(seedRecords) > 0 {
+		// Convert to interface{} slice for insertion
+		docs := make([]interface{}, len(seedRecords))
+		for i, record := range seedRecords {
+			docs[i] = record
+		}
+		
+		_, err = db.collection.InsertMany(ctx, docs)
+		if err != nil {
+			return fmt.Errorf("failed to insert seed data: %w", err)
+		}
+	}
+
+	log.Printf("Successfully imported %d servers from seed file", len(seedRecords))
+	return nil
 }
 // Close closes the database connection
 func (db *MongoDB) Close() error {

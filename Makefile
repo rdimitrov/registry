@@ -1,4 +1,4 @@
-.PHONY: help build test test-unit test-integration test-endpoints test-publish test-all lint lint-fix validate validate-schemas validate-examples check dev-local dev-compose clean publisher
+.PHONY: help build test test-unit test-integration test-endpoints test-publish test-all lint lint-fix validate validate-schemas validate-examples check dev-local dev-compose clean publisher migrate-seed
 
 # Default target
 help: ## Show this help message
@@ -11,6 +11,9 @@ build: ## Build the registry application
 
 publisher: ## Build the publisher tool
 	cd tools/publisher && ./build.sh
+
+migrate-seed: ## Build the seed migration tool
+	cd tools/migrate-seed && ./build.sh
 
 # Test targets
 test-unit: ## Run unit tests with coverage
@@ -65,6 +68,7 @@ clean: ## Clean build artifacts and coverage files
 	rm -rf bin
 	rm -f coverage.out coverage.html
 	cd tools/publisher && rm -f publisher
+	cd tools/migrate-seed && rm -rf bin
 
 
 .DEFAULT_GOAL := help

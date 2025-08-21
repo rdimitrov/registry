@@ -300,8 +300,24 @@ func (db *MemoryDB) ImportSeed(ctx context.Context, seedFilePath string) error {
 		return ctx.Err()
 	}
 	
-	// TODO: Implement ImportSeed for ServerRecord model
-	return fmt.Errorf("memory database ImportSeed not yet updated for ServerRecord model")
+	// Read the migrated seed data (should be in ServerRecord format)
+	seedRecords, err := ReadSeedFile(ctx, seedFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to read seed file: %w", err)
+	}
+	
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	
+	// Clear existing data
+	db.entries = make(map[string]*model.ServerRecord)
+	
+	// Import all seed records
+	for _, record := range seedRecords {
+		db.entries[record.RegistryMetadata.ID] = &record
+	}
+	
+	return nil
 }
 
 // Close closes the database connection
