@@ -1,5 +1,12 @@
 package model
 
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+)
+
 // AuthMethod represents the authentication method used
 type AuthMethod string
 
@@ -26,10 +33,6 @@ const (
 	ServerStatusDeprecated ServerStatus = "deprecated"
 )
 
-// PublishRequest represents a request to publish a server to the registry
-type PublishRequest struct {
-	ServerDetail `json:",inline"`
-}
 
 // Repository represents a source code repository as defined in the spec
 type Repository struct {
@@ -38,11 +41,11 @@ type Repository struct {
 	ID     string `json:"id,omitempty" bson:"id,omitempty"`
 }
 
-// ServerList represents the response for listing servers as defined in the spec
+// ServerList represents the response for listing servers as defined in the spec (legacy, use ServerListResponse)
 type ServerList struct {
-	Servers    []Server `json:"servers" bson:"servers"`
-	Next       string   `json:"next,omitempty" bson:"next,omitempty"`
-	TotalCount int      `json:"total_count" bson:"total_count"`
+	Servers    []ServerDetail `json:"servers" bson:"servers"`
+	Next       string         `json:"next,omitempty" bson:"next,omitempty"`
+	TotalCount int            `json:"total_count" bson:"total_count"`
 }
 
 // create an enum for Format
@@ -107,26 +110,121 @@ type Remote struct {
 	Headers       []KeyValueInput `json:"headers,omitempty" bson:"headers,omitempty"`
 }
 
-// VersionDetail represents the version details of a server
+// VersionDetail represents the version details of a server (pure MCP spec, no registry metadata)
 type VersionDetail struct {
-	Version     string `json:"version" bson:"version"`
-	ReleaseDate string `json:"release_date,omitempty" bson:"release_date"`
-	IsLatest    bool   `json:"is_latest,omitempty" bson:"is_latest"`
+	Version string `json:"version" bson:"version"`
 }
 
-// Server represents a basic server information as defined in the spec
-type Server struct {
-	ID            string        `json:"id,omitempty" bson:"id"`
+// ServerDetail represents complete server information as defined in the MCP spec (pure, no registry metadata)
+type ServerDetail struct {
 	Name          string        `json:"name" bson:"name"`
 	Description   string        `json:"description" bson:"description"`
 	Status        ServerStatus  `json:"status,omitempty" bson:"status,omitempty"`
 	Repository    Repository    `json:"repository,omitempty" bson:"repository"`
 	VersionDetail VersionDetail `json:"version_detail" bson:"version_detail"`
+	Packages      []Package     `json:"packages,omitempty" bson:"packages,omitempty"`
+	Remotes       []Remote      `json:"remotes,omitempty" bson:"remotes,omitempty"`
 }
 
-// ServerDetail represents detailed server information as defined in the spec
-type ServerDetail struct {
-	Server   `json:",inline" bson:",inline"`
-	Packages []Package `json:"packages,omitempty" bson:"packages,omitempty"`
-	Remotes  []Remote  `json:"remotes,omitempty" bson:"remotes,omitempty"`
+// RegistryMetadata represents registry-generated metadata
+type RegistryMetadata struct {
+	ID          string    `json:"id" bson:"_id"`
+	PublishedAt time.Time `json:"published_at" bson:"published_at"`
+	UpdatedAt   time.Time `json:"updated_at,omitempty" bson:"updated_at,omitempty"`
+	IsLatest    bool      `json:"is_latest" bson:"is_latest"`
+	ReleaseDate string    `json:"release_date" bson:"release_date"`
+}
+
+// ServerRecord represents the complete storage model that separates server.json from registry metadata
+type ServerRecord struct {
+	ServerJSON          json.RawMessage        `bson:"server_json"`          // Pure MCP server.json
+	RegistryMetadata    RegistryMetadata       `bson:"registry_metadata"`    // Registry-generated data
+	PublisherExtensions map[string]interface{} `bson:"publisher_extensions"` // x-publisher extensions
+}
+
+// ServerResponse represents the API response format with wrapper and extensions
+type ServerResponse struct {
+	Server     json.RawMessage        `json:"server"`
+	Extensions map[string]interface{} `json:",inline"`
+}
+
+// ServerListResponse represents the paginated server list response
+type ServerListResponse struct {
+	Servers  []ServerResponse `json:"servers"`
+	Metadata *Metadata        `json:"metadata,omitempty"`
+}
+
+// PublishRequest represents the API request format for publishing servers
+type PublishRequest struct {
+	Server     json.RawMessage        `json:"server"`
+	Extensions map[string]interface{} `json:",inline"`
+}
+
+// Metadata represents pagination metadata
+type Metadata struct {
+	NextCursor string `json:"next_cursor,omitempty"`
+	Count      int    `json:"count,omitempty"`
+	Total      int    `json:"total,omitempty"`
+}
+
+// Helper functions
+
+// ValidatePublisherExtensions validates that only x-publisher extensions are present and within size limits
+func ValidatePublisherExtensions(extensions map[string]interface{}) error {
+	const maxExtensionSize = 4 * 1024 // 4KB limit
+
+	// Check size limit
+	extensionsJSON, err := json.Marshal(extensions)
+	if err != nil {
+		return fmt.Errorf("failed to marshal extensions: %w", err)
+	}
+	if len(extensionsJSON) > maxExtensionSize {
+		return fmt.Errorf("extensions exceed 4KB limit (%d bytes)", len(extensionsJSON))
+	}
+
+	// Validate only x-publisher top-level key is allowed
+	for key := range extensions {
+		if strings.HasPrefix(key, "x-") && key != "x-publisher" {
+			return fmt.Errorf("only 'x-publisher' extension allowed in publish requests, found: %s", key)
+		}
+	}
+
+	return nil
+}
+
+// ExtractPublisherExtensions extracts only the x-publisher extension from a map
+func ExtractPublisherExtensions(extensions map[string]interface{}) map[string]interface{} {
+	publisherExtensions := make(map[string]interface{})
+	if publisherData, exists := extensions["x-publisher"]; exists {
+		publisherExtensions["x-publisher"] = publisherData
+	}
+	return publisherExtensions
+}
+
+// CreateRegistryExtensions generates the x-io.modelcontextprotocol.registry extension from registry metadata
+func (rm *RegistryMetadata) CreateRegistryExtensions() map[string]interface{} {
+	return map[string]interface{}{
+		"x-io.modelcontextprotocol.registry": map[string]interface{}{
+			"id":           rm.ID,
+			"published_at": rm.PublishedAt,
+			"updated_at":   rm.UpdatedAt,
+			"is_latest":    rm.IsLatest,
+			"release_date": rm.ReleaseDate,
+		},
+	}
+}
+
+// ParseServerName extracts the server name from raw server JSON for validation purposes
+func ParseServerName(serverJSON json.RawMessage) (string, error) {
+	var serverData map[string]interface{}
+	if err := json.Unmarshal(serverJSON, &serverData); err != nil {
+		return "", fmt.Errorf("invalid server JSON format: %w", err)
+	}
+
+	name, ok := serverData["name"].(string)
+	if !ok || name == "" {
+		return "", fmt.Errorf("server name is required and must be a string")
+	}
+
+	return name, nil
 }
