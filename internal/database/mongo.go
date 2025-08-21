@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -78,7 +79,7 @@ func (db *MongoDB) List(
 	filter map[string]any,
 	cursor string,
 	limit int,
-) ([]*model.Server, string, error) {
+) ([]*model.ServerRecord, string, error) {
 	if limit <= 0 {
 		// Set default limit if not provided
 		limit = 10
@@ -90,16 +91,16 @@ func (db *MongoDB) List(
 
 	// Convert Go map to MongoDB filter
 	mongoFilter := bson.M{
-		"version_detail.is_latest": true,
+		"registry_metadata.is_latest": true,
 	}
 	// Map common filter keys to MongoDB document paths
 	for k, v := range filter {
 		// Handle nested fields with dot notation
 		switch k {
 		case "version":
-			mongoFilter["version_detail.version"] = v
+			mongoFilter["server_json.version_detail.version"] = v
 		case "name":
-			mongoFilter["name"] = v
+			mongoFilter["server_json.name"] = v
 		default:
 			mongoFilter[k] = v
 		}
@@ -116,8 +117,8 @@ func (db *MongoDB) List(
 		}
 
 		// Fetch the document at the cursor to get its sort values
-		var cursorDoc model.Server
-		err := db.collection.FindOne(ctx, bson.M{"id": cursor}).Decode(&cursorDoc)
+		var cursorDoc model.ServerRecord
+		err := db.collection.FindOne(ctx, bson.M{"registry_metadata._id": cursor}).Decode(&cursorDoc)
 		if err != nil {
 			if !errors.Is(err, mongo.ErrNoDocuments) {
 				return nil, "", err
@@ -125,12 +126,12 @@ func (db *MongoDB) List(
 			// If cursor document not found, start from beginning
 		} else {
 			// Use the cursor document's ID to paginate (records with ID > cursor's ID)
-			mongoFilter["id"] = bson.M{"$gt": cursor}
+			mongoFilter["registry_metadata._id"] = bson.M{"$gt": cursor}
 		}
 	}
 
 	// Set sort order by ID (for consistent pagination)
-	findOptions.SetSort(bson.M{"id": 1})
+	findOptions.SetSort(bson.M{"registry_metadata._id": 1})
 
 	// Set limit if provided and valid
 	if limit > 0 {
@@ -145,7 +146,7 @@ func (db *MongoDB) List(
 	defer mongoCursor.Close(ctx)
 
 	// Decode results
-	var results []*model.Server
+	var results []*model.ServerRecord
 	if err = mongoCursor.All(ctx, &results); err != nil {
 		return nil, "", err
 	}
@@ -154,23 +155,23 @@ func (db *MongoDB) List(
 	nextCursor := ""
 	if len(results) > 0 && limit > 0 && len(results) >= limit {
 		// Use the last item's ID as the next cursor
-		nextCursor = results[len(results)-1].ID
+		nextCursor = results[len(results)-1].RegistryMetadata.ID
 	}
 
 	return results, nextCursor, nil
 }
 
-// GetByID retrieves a single ServerDetail by its ID
-func (db *MongoDB) GetByID(ctx context.Context, id string) (*model.ServerDetail, error) {
+// GetByID retrieves a single ServerRecord by its ID
+func (db *MongoDB) GetByID(ctx context.Context, id string) (*model.ServerRecord, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
 
-	// Create a filter for the ID
-	filter := bson.M{"id": id}
+	// Create a filter for the registry metadata ID
+	filter := bson.M{"registry_metadata._id": id}
 
 	// Find the entry in the database
-	var entry model.ServerDetail
+	var entry model.ServerRecord
 	err := db.collection.FindOne(ctx, filter).Decode(&entry)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
@@ -179,111 +180,110 @@ func (db *MongoDB) GetByID(ctx context.Context, id string) (*model.ServerDetail,
 		return nil, fmt.Errorf("error retrieving entry: %w", err)
 	}
 
-	// Create and return a ServerDetail from the entry data
+	// Return the ServerRecord
 	return &entry, nil
 }
 
-// Publish adds a new ServerDetail to the database
-func (db *MongoDB) Publish(ctx context.Context, serverDetail *model.ServerDetail) error {
+// Publish adds a new server to the database with separated server.json and extensions
+func (db *MongoDB) Publish(ctx context.Context, serverJSON []byte, publisherExtensions map[string]interface{}) (*model.ServerRecord, error) {
 	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-	// find a server detail with the same name and check that the current version is greater than the existing one
-	filter := bson.M{
-		"name":                     serverDetail.Name,
-		"version_detail.is_latest": true,
+		return nil, ctx.Err()
 	}
 
-	var existingEntry model.ServerDetail
+	// Parse serverJSON to extract name and version
+	var serverData map[string]interface{}
+	if err := json.Unmarshal(serverJSON, &serverData); err != nil {
+		return nil, fmt.Errorf("invalid server JSON: %w", err)
+	}
+	
+	// Extract name
+	name, ok := serverData["name"].(string)
+	if !ok || name == "" {
+		return nil, fmt.Errorf("name is required in server JSON")
+	}
+	
+	// Extract version
+	versionDetail, ok := serverData["version_detail"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("version_detail is required in server JSON")
+	}
+	
+	version, ok := versionDetail["version"].(string)
+	if !ok || version == "" {
+		return nil, fmt.Errorf("version is required in version_detail")
+	}
+
+	// Check for existing entry with same name
+	filter := bson.M{
+		"server_json.name":            name,
+		"registry_metadata.is_latest": true,
+	}
+
+	var existingEntry model.ServerRecord
 	err := db.collection.FindOne(ctx, filter).Decode(&existingEntry)
 	if err != nil && !errors.Is(err, mongo.ErrNoDocuments) {
-		return fmt.Errorf("error checking existing entry: %w", err)
+		return nil, fmt.Errorf("error checking existing entry: %w", err)
 	}
 
-	// check that the current version is greater than the existing one
-	if serverDetail.VersionDetail.Version <= existingEntry.VersionDetail.Version {
-		return fmt.Errorf("version must be greater than existing version")
+	// Version comparison logic (if existing entry found)
+	if existingEntry.RegistryMetadata.ID != "" {
+		var existingServerData map[string]interface{}
+		if err := json.Unmarshal(existingEntry.ServerJSON, &existingServerData); err == nil {
+			if existingVersionDetail, ok := existingServerData["version_detail"].(map[string]interface{}); ok {
+				if existingVersion, ok := existingVersionDetail["version"].(string); ok {
+					if version <= existingVersion {
+						return nil, fmt.Errorf("version must be greater than existing version %s", existingVersion)
+					}
+				}
+			}
+		}
 	}
 
-	serverDetail.ID = uuid.New().String()
-	serverDetail.VersionDetail.IsLatest = true
-	serverDetail.VersionDetail.ReleaseDate = time.Now().Format(time.RFC3339)
+	// Create new registry metadata
+	now := time.Now()
+	registryMetadata := model.RegistryMetadata{
+		ID:          uuid.New().String(),
+		PublishedAt: now,
+		UpdatedAt:   now,
+		IsLatest:    true,
+		ReleaseDate: now.Format(time.RFC3339),
+	}
 
-	// Insert the entry into the database
-	_, err = db.collection.InsertOne(ctx, serverDetail)
+	// Create server record
+	record := &model.ServerRecord{
+		ServerJSON:          serverJSON,
+		RegistryMetadata:    registryMetadata,
+		PublisherExtensions: publisherExtensions,
+	}
+
+	// Insert the new record
+	_, err = db.collection.InsertOne(ctx, record)
 	if err != nil {
 		if mongo.IsDuplicateKeyError(err) {
-			return ErrAlreadyExists
+			return nil, ErrAlreadyExists
 		}
-		return fmt.Errorf("error inserting entry: %w", err)
+		return nil, fmt.Errorf("error inserting entry: %w", err)
 	}
 
-	// update the existing entry to not be the latest version
-	if existingEntry.ID != "" {
+	// Update existing entry to not be latest
+	if existingEntry.RegistryMetadata.ID != "" {
 		_, err = db.collection.UpdateOne(
 			ctx,
-			bson.M{"id": existingEntry.ID},
-			bson.M{"$set": bson.M{"version_detail.islatest": false}})
+			bson.M{"registry_metadata._id": existingEntry.RegistryMetadata.ID},
+			bson.M{"$set": bson.M{"registry_metadata.is_latest": false}})
 		if err != nil {
-			return fmt.Errorf("error updating existing entry: %w", err)
+			return nil, fmt.Errorf("error updating existing entry: %w", err)
 		}
 	}
 
-	return nil
+	return record, nil
 }
 
 // ImportSeed imports initial data from a seed file into MongoDB
 func (db *MongoDB) ImportSeed(ctx context.Context, seedFilePath string) error {
-	// Read the seed file
-	servers, err := ReadSeedFile(ctx, seedFilePath)
-	if err != nil {
-		return fmt.Errorf("failed to read seed file: %w", err)
-	}
-
-	collection := db.collection
-
-	log.Printf("Importing %d servers into collection %s", len(servers), collection.Name())
-
-	for i, server := range servers {
-		if server.ID == "" || server.Name == "" {
-			log.Printf("Skipping server %d: ID or Name is empty", i+1)
-			continue
-		}
-
-		if server.VersionDetail.Version == "" {
-			server.VersionDetail.Version = "0.0.1-seed"
-			server.VersionDetail.ReleaseDate = time.Now().Format(time.RFC3339)
-			server.VersionDetail.IsLatest = true
-		}
-
-		// Create filter based on server ID
-		filter := bson.M{"id": server.ID}
-
-		// Create update document
-		update := bson.M{"$set": server}
-
-		// Use upsert to create if not exists or update if exists
-		opts := options.Update().SetUpsert(true)
-		result, err := collection.UpdateOne(ctx, filter, update, opts)
-		if err != nil {
-			log.Printf("Error importing server %s: %v", server.ID, err)
-			continue
-		}
-
-		switch {
-		case result.UpsertedCount > 0:
-			log.Printf("[%d/%d] Created server: %s", i+1, len(servers), server.Name)
-		case result.ModifiedCount > 0:
-			log.Printf("[%d/%d] Updated server: %s", i+1, len(servers), server.Name)
-		default:
-			log.Printf("[%d/%d] Server already up to date: %s", i+1, len(servers), server.Name)
-		}
-	}
-
-	log.Println("MongoDB database import completed successfully")
-	return nil
+	// TODO: Update ImportSeed for ServerRecord model after Phase 8 (seed data update)
+	return fmt.Errorf("MongoDB ImportSeed not yet updated for ServerRecord model")
 }
-
 // Close closes the database connection
 func (db *MongoDB) Close() error {
 	return db.client.Disconnect(context.Background())

@@ -7,7 +7,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -102,8 +101,8 @@ func parseSeedJSON(fileContent []byte) ([]model.ServerDetail, error) {
 // PaginatedResponse represents the paginated response from /v0/servers endpoint
 // PaginatedResponse represents the structure of a paginated response from /v0/servers endpoint
 type PaginatedResponse struct {
-	Data     []model.Server `json:"servers"`
-	Metadata Metadata       `json:"metadata,omitempty"`
+	Data     []model.ServerDetail `json:"servers"`
+	Metadata Metadata             `json:"metadata,omitempty"`
 }
 
 // Metadata contains pagination metadata
@@ -114,158 +113,8 @@ type Metadata struct {
 }
 
 // readFromRegistryWithContext reads all servers from a registry by paginating through /v0/servers endpoint
+// readFromRegistryWithContext reads all servers from a registry by paginating through /v0/servers endpoint
 func readFromRegistryWithContext(ctx context.Context, registryURL string) ([]model.ServerDetail, error) {
-	log.Printf("Reading from registry: %s", registryURL)
-
-	// Ensure the URL doesn't have a trailing slash
-	registryURL = strings.TrimSuffix(registryURL, "/")
-
-	var allServers []model.ServerDetail
-	cursor := ""
-	pageCount := 0
-
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-
-	for {
-		pageCount++
-
-		// Add delay between requests as requested (10 seconds by default)
-		// Can be overridden by SEED_IMPORT_DELAY environment variable for testing
-		if pageCount > 1 { // Don't delay before the first request
-			delay := 10 * time.Second
-			if delayStr := os.Getenv("SEED_IMPORT_DELAY"); delayStr != "" {
-				if parsedDelay, err := time.ParseDuration(delayStr); err == nil {
-					delay = parsedDelay
-				}
-			}
-			if delay > 0 {
-				log.Printf("Waiting %v before fetching page %d...", delay, pageCount)
-				time.Sleep(delay)
-			}
-		}
-
-		log.Printf("Fetching page %d from registry", pageCount)
-
-		// Build the URL for this page
-		serverURL := registryURL + "/v0/servers"
-		if cursor != "" {
-			// Add cursor parameter for pagination
-			parsed, err := url.Parse(serverURL)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse registry URL: %w", err)
-			}
-			query := parsed.Query()
-			query.Set("cursor", cursor)
-			query.Set("limit", "100") // Use maximum limit for efficiency
-			parsed.RawQuery = query.Encode()
-			serverURL = parsed.String()
-		} else {
-			// First page - use max limit
-			serverURL += "?limit=100"
-		}
-
-		// Fetch the page
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, serverURL, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create request for %s: %w", serverURL, err)
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch servers from %s: %w", serverURL, err)
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
-			return nil, fmt.Errorf("HTTP request to %s failed with status %d: %s", serverURL, resp.StatusCode, resp.Status)
-		}
-
-		// Read and parse the response
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			return nil, fmt.Errorf("failed to read response body from %s: %w", serverURL, err)
-		}
-
-		var pageResponse PaginatedResponse
-		if err := json.Unmarshal(body, &pageResponse); err != nil {
-			return nil, fmt.Errorf("failed to parse servers response from %s: %w", serverURL, err)
-		}
-
-		log.Printf("Retrieved %d servers from page %d", len(pageResponse.Data), pageCount)
-
-		// For each server in this page, get the detailed information
-		for _, server := range pageResponse.Data {
-			// Build URL for server detail
-			detailURL := registryURL + "/v0/servers/" + server.ID
-
-			detailReq, err := http.NewRequestWithContext(ctx, http.MethodGet, detailURL, nil)
-			if err != nil {
-				log.Printf("Warning: failed to create request for server %s: %v", server.ID, err)
-				// Fall back to basic server information
-				serverDetail := model.ServerDetail{
-					Server: server,
-				}
-				allServers = append(allServers, serverDetail)
-				continue
-			}
-
-			detailResp, err := client.Do(detailReq)
-			if err != nil {
-				log.Printf("Warning: failed to fetch details for server %s: %v", server.ID, err)
-				// Fall back to basic server information
-				serverDetail := model.ServerDetail{
-					Server: server,
-				}
-				allServers = append(allServers, serverDetail)
-				continue
-			}
-
-			if detailResp.StatusCode != http.StatusOK {
-				log.Printf("Warning: failed to fetch details for server %s (status %d)", server.ID, detailResp.StatusCode)
-				detailResp.Body.Close()
-				// Fall back to basic server information
-				serverDetail := model.ServerDetail{
-					Server: server,
-				}
-				allServers = append(allServers, serverDetail)
-				continue
-			}
-
-			detailBody, err := io.ReadAll(detailResp.Body)
-			detailResp.Body.Close()
-			if err != nil {
-				log.Printf("Warning: failed to read detail response for server %s: %v", server.ID, err)
-				// Fall back to basic server information
-				serverDetail := model.ServerDetail{
-					Server: server,
-				}
-				allServers = append(allServers, serverDetail)
-				continue
-			}
-
-			var serverDetail model.ServerDetail
-			if err := json.Unmarshal(detailBody, &serverDetail); err != nil {
-				log.Printf("Warning: failed to parse detail response for server %s: %v", server.ID, err)
-				// Fall back to basic server information
-				serverDetail = model.ServerDetail{
-					Server: server,
-				}
-			}
-
-			allServers = append(allServers, serverDetail)
-		}
-
-		// Check if there are more pages
-		if pageResponse.Metadata.NextCursor == "" {
-			log.Printf("Reached end of pagination after %d pages", pageCount)
-			break
-		}
-
-		cursor = pageResponse.Metadata.NextCursor
-	}
-
-	log.Printf("Successfully retrieved %d servers from registry %s", len(allServers), registryURL)
-	return allServers, nil
+	// TODO: Update for new wrapper API format after Phase 4 completion
+	return nil, fmt.Errorf("registry import not yet updated for new API format")
 }
