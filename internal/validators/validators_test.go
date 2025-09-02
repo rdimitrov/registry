@@ -179,7 +179,10 @@ func TestValidate(t *testing.T) {
 				},
 				Remotes: []model.Remote{
 					{
-						URL: "example.com/remote",
+						TransportType: model.TransportTypeConfig{
+							Type: "streamable-http",
+							URL:  "example.com/remote",
+						},
 					},
 				},
 			},
@@ -239,10 +242,16 @@ func TestValidate(t *testing.T) {
 				},
 				Remotes: []model.Remote{
 					{
-						URL: "https://valid.com/remote",
+						TransportType: model.TransportTypeConfig{
+							Type: "streamable-http",
+							URL:  "https://valid.com/remote",
+						},
 					},
 					{
-						URL: "invalid-url",
+						TransportType: model.TransportTypeConfig{
+							Type: "streamable-http",
+							URL:  "invalid-url",
+						},
 					},
 				},
 			},
@@ -789,7 +798,10 @@ func createValidServerWithArgument(arg model.Argument) apiv0.ServerJSON {
 		},
 		Remotes: []model.Remote{
 			{
-				URL: "https://example.com/remote",
+				TransportType: model.TransportTypeConfig{
+					Type: "streamable-http",
+					URL:  "https://example.com/remote",
+				},
 			},
 		},
 	}

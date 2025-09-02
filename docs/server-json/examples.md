@@ -21,6 +21,9 @@
       "registry_base_url": "https://registry.npmjs.org",
       "identifier": "@modelcontextprotocol/server-brave-search",
       "version": "1.0.2",
+      "transport_type": {
+        "type": "stdio"
+      },
       "environment_variables": [
         {
           "name": "BRAVE_API_KEY",
@@ -60,6 +63,9 @@ Suppose your MCP server application requires a `mcp start` CLI arguments to star
       "registry_base_url": "https://api.nuget.org",
       "identifier": "Knapcode.SampleMcpServer",
       "version": "0.4.0-beta",
+      "transport_type": {
+        "type": "stdio"
+      },
       "package_arguments": [
         {
           "type": "positional",
@@ -109,6 +115,9 @@ This will essentially instruct the MCP client to execute `dnx Knapcode.SampleMcp
       "registry_base_url": "https://registry.npmjs.org",
       "identifier": "@modelcontextprotocol/server-filesystem",
       "version": "1.0.2",
+      "transport_type": {
+        "type": "stdio"
+      },
       "package_arguments": [
         {
           "type": "positional",
@@ -132,6 +141,9 @@ This will essentially instruct the MCP client to execute `dnx Knapcode.SampleMcp
       "registry_base_url": "https://docker.io",
       "identifier": "mcp/filesystem",
       "version": "1.0.2",
+      "transport_type": {
+        "type": "stdio"
+      },
       "runtime_arguments": [
         {
           "type": "named",
@@ -201,8 +213,10 @@ This will essentially instruct the MCP client to execute `dnx Knapcode.SampleMcp
   },
   "remotes": [
     {
-      "transport_type": "sse",
-      "url": "http://mcp-fs.anonymous.modelcontextprotocol.io/sse"
+      "transport_type": {
+        "type": "streamable-http",
+        "url": "http://mcp-fs.anonymous.modelcontextprotocol.io/http"
+      }
     }
   ],
   "_meta": {
@@ -241,6 +255,9 @@ This will essentially instruct the MCP client to execute `dnx Knapcode.SampleMcp
       "identifier": "weather-mcp-server",
       "version": "0.5.0",
       "runtime_hint": "uvx",
+      "transport_type": {
+        "type": "stdio"
+      },
       "environment_variables": [
         {
           "name": "WEATHER_API_KEY",
@@ -294,6 +311,9 @@ The `dnx` tool ships with the .NET 10 SDK, starting with Preview 6.
       "identifier": "Knapcode.SampleMcpServer",
       "version": "0.5.0",
       "runtime_hint": "dnx",
+      "transport_type": {
+        "type": "stdio"
+      },
       "environment_variables": [
         {
           "name": "WEATHER_CHOICES",
@@ -340,6 +360,9 @@ The `dnx` tool ships with the .NET 10 SDK, starting with Preview 6.
       "registry_base_url": "https://docker.io",
       "identifier": "example/database-manager-mcp",
       "version": "3.1.0",
+      "transport_type": {
+        "type": "stdio"
+      },
       "runtime_arguments": [
         {
           "type": "named",
@@ -451,6 +474,9 @@ The `dnx` tool ships with the .NET 10 SDK, starting with Preview 6.
       "identifier": "@example/hybrid-mcp-server",
       "version": "1.5.0",
       "runtime_hint": "npx",
+      "transport_type": {
+        "type": "stdio"
+      },
       "package_arguments": [
         {
           "type": "named",
@@ -468,30 +494,34 @@ The `dnx` tool ships with the .NET 10 SDK, starting with Preview 6.
   ],
   "remotes": [
     {
-      "transport_type": "sse",
-      "url": "https://mcp.anonymous.modelcontextprotocol.io/sse",
-      "headers": [
-        {
-          "name": "X-API-Key",
-          "description": "API key for authentication",
-          "is_required": true,
-          "is_secret": true
-        },
-        {
-          "name": "X-Region",
-          "description": "Service region",
-          "default": "us-east-1",
-          "choices": [
-            "us-east-1",
-            "eu-west-1",
-            "ap-southeast-1"
-          ]
-        }
-      ]
+      "transport_type": {
+        "type": "streamable-http",
+        "url": "https://mcp.anonymous.modelcontextprotocol.io/http",
+        "headers": [
+          {
+            "name": "X-API-Key",
+            "description": "API key for authentication",
+            "is_required": true,
+            "is_secret": true
+          },
+          {
+            "name": "X-Region",
+            "description": "Service region",
+            "default": "us-east-1",
+            "choices": [
+              "us-east-1",
+              "eu-west-1",
+              "ap-southeast-1"
+            ]
+          }
+        ]
+      }
     },
     {
-      "transport_type": "streamable-http",
-      "url": "https://mcp.anonymous.modelcontextprotocol.io/http"
+      "transport_type": {
+        "type": "streamable-http",
+        "url": "https://mcp.another-anonymous.modelcontextprotocol.io/http"
+      }
     }
   ],
   "_meta": {
@@ -532,6 +562,9 @@ The `dnx` tool ships with the .NET 10 SDK, starting with Preview 6.
       "registry_base_url": "https://github.com",
       "identifier": "https://github.com/modelcontextprotocol/text-editor-mcpb/releases/download/v1.0.2/text-editor.mcpb",
       "version": "1.0.2",
+      "transport_type": {
+        "type": "stdio"
+      },
       "file_sha256": "fe333e598595000ae021bd27117db32ec69af6987f507ba7a63c90638ff633ce"
     }
   ],
@@ -574,6 +607,9 @@ This example shows an MCPB (MCP Bundle) package that:
       "registry_base_url": "https://registry.npmjs.org",
       "identifier": "@legacy/old-weather-server",
       "version": "0.9.5",
+      "transport_type": {
+        "type": "stdio"
+      },
       "environment_variables": [
         {
           "name": "WEATHER_API_KEY",

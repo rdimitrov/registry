@@ -22,8 +22,8 @@ func TestValidateNoDuplicateRemoteURLs(t *testing.T) {
 				Version: "1.0.0",
 			},
 			Remotes: []model.Remote{
-				{URL: "https://api.example.com/mcp"},
-				{URL: "https://webhook.example.com/sse"},
+				{TransportType: model.TransportTypeConfig{Type: "streamable-http", URL: "https://api.example.com/mcp"}},
+				{TransportType: model.TransportTypeConfig{Type: "streamable-http", URL: "https://webhook.example.com/http"}},
 			},
 		},
 		"existing2": {
@@ -33,7 +33,7 @@ func TestValidateNoDuplicateRemoteURLs(t *testing.T) {
 				Version: "1.0.0",
 			},
 			Remotes: []model.Remote{
-				{URL: "https://api.microsoft.com/mcp"},
+				{TransportType: model.TransportTypeConfig{Type: "streamable-http", URL: "https://api.microsoft.com/mcp"}},
 			},
 		},
 	}
@@ -75,8 +75,8 @@ func TestValidateNoDuplicateRemoteURLs(t *testing.T) {
 					Version: "1.0.0",
 				},
 				Remotes: []model.Remote{
-					{URL: "https://new.example.com/mcp"},
-					{URL: "https://unique.example.com/sse"},
+					{TransportType: model.TransportTypeConfig{Type: "streamable-http", URL: "https://new.example.com/mcp"}},
+					{TransportType: model.TransportTypeConfig{Type: "streamable-http", URL: "https://unique.example.com/http"}},
 				},
 			},
 			expectError: false,
@@ -90,7 +90,7 @@ func TestValidateNoDuplicateRemoteURLs(t *testing.T) {
 					Version: "1.0.0",
 				},
 				Remotes: []model.Remote{
-					{URL: "https://api.example.com/mcp"}, // This URL already exists
+					{TransportType: model.TransportTypeConfig{Type: "streamable-http", URL: "https://api.example.com/mcp"}}, // This URL already exists
 				},
 			},
 			expectError: true,
@@ -105,7 +105,7 @@ func TestValidateNoDuplicateRemoteURLs(t *testing.T) {
 					Version: "1.1.0",
 				},
 				Remotes: []model.Remote{
-					{URL: "https://api.example.com/mcp"}, // Same URL as before
+					{TransportType: model.TransportTypeConfig{Type: "streamable-http", URL: "https://api.example.com/mcp"}}, // Same URL as before
 				},
 			},
 			expectError: false,
