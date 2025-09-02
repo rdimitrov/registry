@@ -39,7 +39,10 @@ func TestValidate(t *testing.T) {
 				},
 				Remotes: []model.Remote{
 					{
-						URL: "https://example.com/remote",
+						TransportType: model.TransportTypeConfig{
+							Type: "streamable-http",
+							URL:  "https://example.com/remote",
+						},
 					},
 				},
 			},
@@ -153,7 +156,10 @@ func TestValidate(t *testing.T) {
 				},
 				Remotes: []model.Remote{
 					{
-						URL: "not-a-valid-url",
+						TransportType: model.TransportTypeConfig{
+							Type: "streamable-http",
+							URL:  "not-a-valid-url",
+						},
 					},
 				},
 			},
@@ -304,7 +310,7 @@ func TestValidate_RemoteNamespaceMatch(t *testing.T) {
 			serverDetail: apiv0.ServerJSON{
 				Name: "com.example/test-server",
 				Remotes: []model.Remote{
-					{URL: "https://example.com/mcp"},
+					{TransportType: model.TransportTypeConfig{Type: "streamable-http", URL: "https://example.com/mcp"}},
 				},
 			},
 			expectError: false,
@@ -314,7 +320,7 @@ func TestValidate_RemoteNamespaceMatch(t *testing.T) {
 			serverDetail: apiv0.ServerJSON{
 				Name: "com.example/test-server",
 				Remotes: []model.Remote{
-					{URL: "https://mcp.example.com/endpoint"},
+					{TransportType: model.TransportTypeConfig{Type: "streamable-http", URL: "https://mcp.example.com/endpoint"}},
 				},
 			},
 			expectError: false,
@@ -324,7 +330,7 @@ func TestValidate_RemoteNamespaceMatch(t *testing.T) {
 			serverDetail: apiv0.ServerJSON{
 				Name: "com.example/api-server",
 				Remotes: []model.Remote{
-					{URL: "https://api.example.com/mcp"},
+					{TransportType: model.TransportTypeConfig{Type: "streamable-http", URL: "https://api.example.com/mcp"}},
 				},
 			},
 			expectError: false,
@@ -334,7 +340,7 @@ func TestValidate_RemoteNamespaceMatch(t *testing.T) {
 			serverDetail: apiv0.ServerJSON{
 				Name: "com.example/test-server",
 				Remotes: []model.Remote{
-					{URL: "https://google.com/mcp"},
+					{TransportType: model.TransportTypeConfig{Type: "streamable-http", URL: "https://google.com/mcp"}},
 				},
 			},
 			expectError: true,
@@ -345,18 +351,28 @@ func TestValidate_RemoteNamespaceMatch(t *testing.T) {
 			serverDetail: apiv0.ServerJSON{
 				Name: "com.microsoft/server",
 				Remotes: []model.Remote{
-					{URL: "https://api.github.com/endpoint"},
+					{TransportType: model.TransportTypeConfig{Type: "streamable-http", URL: "https://api.github.com/endpoint"}},
 				},
 			},
 			expectError: true,
 			errorMsg:    "remote URL host api.github.com does not match publisher domain microsoft.com",
 		},
 		{
+			name: "localhost URLs allowed with any namespace",
+			serverDetail: apiv0.ServerJSON{
+				Name: "com.example/test-server",
+				Remotes: []model.Remote{
+					{TransportType: model.TransportTypeConfig{Type: "streamable-http", URL: "http://localhost:3000/sse"}},
+				},
+			},
+			expectError: false,
+		},
+		{
 			name: "invalid URL format",
 			serverDetail: apiv0.ServerJSON{
 				Name: "com.example/test",
 				Remotes: []model.Remote{
-					{URL: "not-a-valid-url"},
+					{TransportType: model.TransportTypeConfig{Type: "streamable-http", URL: "not-a-valid-url"}},
 				},
 			},
 			expectError: true,
@@ -375,8 +391,8 @@ func TestValidate_RemoteNamespaceMatch(t *testing.T) {
 			serverDetail: apiv0.ServerJSON{
 				Name: "com.example/server",
 				Remotes: []model.Remote{
-					{URL: "https://api.example.com/sse"},
-					{URL: "https://mcp.example.com/websocket"},
+					{TransportType: model.TransportTypeConfig{Type: "streamable-http", URL: "https://api.example.com/sse"}},
+					{TransportType: model.TransportTypeConfig{Type: "streamable-http", URL: "https://mcp.example.com/websocket"}},
 				},
 			},
 			expectError: false,
@@ -386,8 +402,8 @@ func TestValidate_RemoteNamespaceMatch(t *testing.T) {
 			serverDetail: apiv0.ServerJSON{
 				Name: "com.example/server",
 				Remotes: []model.Remote{
-					{URL: "https://example.com/sse"},
-					{URL: "https://google.com/websocket"},
+					{TransportType: model.TransportTypeConfig{Type: "streamable-http", URL: "https://example.com/sse"}},
+					{TransportType: model.TransportTypeConfig{Type: "streamable-http", URL: "https://google.com/websocket"}},
 				},
 			},
 			expectError: true,

@@ -178,7 +178,7 @@ func (db *MemoryDB) matchesFilter(entry *apiv0.ServerJSON, filter *ServerFilter)
 	if filter.RemoteURL != nil {
 		found := false
 		for _, remote := range entry.Remotes {
-			if remote.URL == *filter.RemoteURL {
+			if remote.TransportType.URL == *filter.RemoteURL {
 				found = true
 				break
 			}

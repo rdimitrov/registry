@@ -171,8 +171,12 @@ func (s *registryServiceImpl) Publish(req apiv0.ServerJSON) (*apiv0.ServerJSON, 
 func (s *registryServiceImpl) validateNoDuplicateRemoteURLs(ctx context.Context, serverDetail apiv0.ServerJSON) error {
 	// Check each remote URL in the new server for conflicts
 	for _, remote := range serverDetail.Remotes {
+		// Only check remotes that have URLs (streamable-http transport)
+		if remote.TransportType.URL == "" {
+			continue
+		}
 		// Use filter to find servers with this remote URL
-		filter := &database.ServerFilter{RemoteURL: &remote.URL}
+		filter := &database.ServerFilter{RemoteURL: &remote.TransportType.URL}
 
 		conflictingServers, _, err := s.db.List(ctx, filter, "", 1000)
 		if err != nil {
@@ -182,7 +186,7 @@ func (s *registryServiceImpl) validateNoDuplicateRemoteURLs(ctx context.Context,
 		// Check if any conflicting server has a different name
 		for _, conflictingServer := range conflictingServers {
 			if conflictingServer.Name != serverDetail.Name {
-				return fmt.Errorf("remote URL %s is already used by server %s", remote.URL, conflictingServer.Name)
+				return fmt.Errorf("remote URL %s is already used by server %s", remote.TransportType.URL, conflictingServer.Name)
 			}
 		}
 	}

@@ -67,6 +67,11 @@ func validatePackageField(obj *model.Package) error {
 		return ErrPackageNameHasSpaces
 	}
 
+	// Validate transport type
+	if err := validateTransportType(obj.TransportType); err != nil {
+		return fmt.Errorf("invalid transport type: %w", err)
+	}
+
 	// Validate runtime arguments
 	for _, arg := range obj.RuntimeArguments {
 		if err := validateArgument(&arg); err != nil {
@@ -130,11 +135,29 @@ func validateArgumentValueFields(name, value, defaultValue string) error {
 	return nil
 }
 
-func validateRemote(obj *model.Remote) error {
-	if !IsValidURL(obj.URL) {
-		return fmt.Errorf("%w: %s", ErrInvalidRemoteURL, obj.URL)
+func validateTransportType(transport model.TransportTypeConfig) error {
+	// Validate transport type is supported
+	switch transport.Type {
+	case model.TransportTypeStdio:
+		// No additional validation needed for stdio
+		return nil
+	case model.TransportTypeStreamableHTTP:
+		// URL is required for streamable-http
+		if transport.URL == "" {
+			return fmt.Errorf("url is required for %s transport type", model.TransportTypeStreamableHTTP)
+		}
+		// Validate URL format
+		if !IsValidURL(transport.URL) {
+			return fmt.Errorf("%w: %s", ErrInvalidRemoteURL, transport.URL)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported transport type: %s", transport.Type)
 	}
-	return nil
+}
+
+func validateRemote(obj *model.Remote) error {
+	return validateTransportType(obj.TransportType)
 }
 
 // ValidatePublishRequest validates a complete publish request including extensions
@@ -210,8 +233,11 @@ func validateRemoteNamespaceMatch(serverJSON apiv0.ServerJSON) error {
 	namespace := serverJSON.Name
 
 	for _, remote := range serverJSON.Remotes {
-		if err := validateRemoteURLMatchesNamespace(remote.URL, namespace); err != nil {
-			return fmt.Errorf("remote URL %s does not match namespace %s: %w", remote.URL, namespace, err)
+		// Only validate if remote has a URL (streamable-http transport)
+		if remote.TransportType.URL != "" {
+			if err := validateRemoteURLMatchesNamespace(remote.TransportType.URL, namespace); err != nil {
+				return fmt.Errorf("remote URL %s does not match namespace %s: %w", remote.TransportType.URL, namespace, err)
+			}
 		}
 	}
 
