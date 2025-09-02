@@ -2,6 +2,7 @@ package validators_test
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/registry/internal/config"
@@ -772,6 +773,9 @@ func TestValidate_RegistryTypesAndUrls(t *testing.T) {
 						RegistryType:    tc.registryType,
 						RegistryBaseURL: tc.baseURL,
 						Version:         tc.version,
+						TransportType: model.TransportTypeConfig{
+							Type: "stdio",
+						},
 					},
 				},
 			}
@@ -788,6 +792,132 @@ func TestValidate_RegistryTypesAndUrls(t *testing.T) {
 	}
 }
 
+func TestValidate_RegistryBaseURLs(t *testing.T) {
+	testCases := []struct {
+		name         string
+		registryType string
+		baseURL      string
+		identifier   string
+		expectError  bool
+	}{
+		// Invalid base URLs for specific registry types
+		{"npm_wrong_url", model.RegistryTypeNPM, "https://pypi.org", "test-package", true},
+		{"pypi_wrong_url", model.RegistryTypePyPI, "https://registry.npmjs.org", "test-package", true},
+		{"oci_wrong_url", model.RegistryTypeOCI, "https://registry.npmjs.org", "test-package", true},
+		{"nuget_wrong_url", model.RegistryTypeNuGet, "https://docker.io", "test-package", true},
+		{"mcpb_wrong_url", model.RegistryTypeMCPB, "https://evil.com", "https://github.com/owner/repo", true},
+		{"mismatched_base_url_1", model.RegistryTypeNPM, model.RegistryURLDocker, "test-package", true},
+		{"mismatched_base_url_2", model.RegistryTypeOCI, model.RegistryTypeNuGet, "test-package", true},
+
+		// Localhost URLs should be rejected - no development exceptions
+		{"localhost_npm", model.RegistryTypeNPM, "http://localhost:3000", "test-package", true},
+		{"localhost_ip", model.RegistryTypePyPI, "http://127.0.0.1:8080", "test-package", true},
+
+		// Valid combinations (should pass)
+		{"valid_npm", model.RegistryTypeNPM, model.RegistryURLNPM, "test-package", false},
+		{"valid_pypi", model.RegistryTypePyPI, model.RegistryURLPyPI, "test-package", false},
+		{"valid_oci", model.RegistryTypeOCI, model.RegistryURLDocker, "test-package", false},
+		{"valid_nuget", model.RegistryTypeNuGet, model.RegistryURLNuGet, "test-package", false},
+		{"valid_mcpb_github", model.RegistryTypeMCPB, model.RegistryURLGitHub, "https://github.com/owner/repo/releases/download/v1.0.0/package.mcpb", false},
+		{"valid_mcpb_gitlab", model.RegistryTypeMCPB, model.RegistryURLGitLab, "https://gitlab.com/owner/repo/-/releases/v1.0.0/downloads/package.mcpb", false},
+		{"empty_base_url_npm", model.RegistryTypeNPM, "", "test-package", false},     // should be inferred
+		{"empty_base_url_nuget", model.RegistryTypeNuGet, "", "test-package", false}, // should be inferred
+		{"empty_base_url_mcpb", model.RegistryTypeMCPB, "", "https://github.com/owner/repo/releases/download/v1.0.0/package.mcpb", false},
+
+		// Trailing slash URLs should be rejected - strict exact match only
+		{"npm_trailing_slash", model.RegistryTypeNPM, "https://registry.npmjs.org/", "test-package", true},
+		{"pypi_trailing_slash", model.RegistryTypePyPI, "https://pypi.org/", "test-package", true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			serverDetail := apiv0.ServerJSON{
+				Name:        "com.example/test-server",
+				Description: "A test server",
+				Repository: model.Repository{
+					URL:    "https://github.com/owner/repo",
+					Source: "github",
+					ID:     "owner/repo",
+				},
+				VersionDetail: model.VersionDetail{
+					Version: "1.0.0",
+				},
+				Packages: []model.Package{
+					{
+						Identifier:      tc.identifier,
+						RegistryType:    tc.registryType,
+						RegistryBaseURL: tc.baseURL,
+						TransportType: model.TransportTypeConfig{
+							Type: "stdio",
+						},
+					},
+				},
+				Remotes: []model.Remote{
+					{
+						TransportType: model.TransportTypeConfig{
+							Type: "streamable-http",
+							URL:  "https://example.com/remote",
+						},
+					},
+				},
+			}
+
+			err := validators.ValidateServerJSON(&serverDetail)
+			if tc.expectError {
+				assert.Error(t, err)
+				// Check that the error is related to registry validation
+				errStr := err.Error()
+				assert.True(t,
+					strings.Contains(errStr, validators.ErrUnsupportedRegistryBaseURL.Error()) ||
+						strings.Contains(errStr, validators.ErrMismatchedRegistryTypeAndURL.Error()),
+					"Expected registry validation error, got: %s", errStr)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestValidate_EmptyRegistryType(t *testing.T) {
+	// Test that empty registry type is rejected
+	serverDetail := apiv0.ServerJSON{
+		Name:        "com.example/test-server",
+		Description: "A test server",
+		Repository: model.Repository{
+			URL:    "https://github.com/owner/repo",
+			Source: "github",
+			ID:     "owner/repo",
+		},
+		VersionDetail: model.VersionDetail{
+			Version: "1.0.0",
+		},
+		Packages: []model.Package{
+			{
+				Identifier:      "test-package",
+				RegistryType:    "", // Empty registry type
+				RegistryBaseURL: "",
+				TransportType: model.TransportTypeConfig{
+					Type: "stdio",
+				},
+			},
+		},
+		Remotes: []model.Remote{
+			{
+				TransportType: model.TransportTypeConfig{
+					Type: "streamable-http",
+					URL:  "https://example.com/remote",
+				},
+			},
+		},
+	}
+
+	err := validators.ValidateServerJSON(&serverDetail)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), validators.ErrUnsupportedRegistryType.Error())
+	assert.Contains(t, err.Error(), "registry type is required")
+}
+
+>>>>>>> 13139f6 (Add unit tests for the transport type property)
 func createValidServerWithArgument(arg model.Argument) apiv0.ServerJSON {
 	return apiv0.ServerJSON{
 		Name:        "com.example/test-server",
@@ -819,5 +949,469 @@ func createValidServerWithArgument(arg model.Argument) apiv0.ServerJSON {
 				},
 			},
 		},
+	}
+}
+
+func TestValidate_MCPBReleaseURLs(t *testing.T) {
+	testCases := []struct {
+		name        string
+		identifier  string
+		expectError bool
+		errorMsg    string
+	}{
+		// Valid GitHub release URLs
+		{"valid_github_release", "https://github.com/owner/repo/releases/download/v1.0.0/package.mcpb", false, ""},
+		{"valid_github_release_with_path", "https://github.com/org/project/releases/download/v2.1.0/my-server.mcpb", false, ""},
+		{"valid_github_complex_tag", "https://github.com/owner/repo/releases/download/v1.0.0-alpha.1+build.123/package.mcpb", false, ""},
+		{"valid_github_single_char_owner", "https://github.com/a/b/releases/download/v1.0.0/package.mcpb", false, ""},
+		
+		// Valid GitLab release URLs
+		{"valid_gitlab_releases", "https://gitlab.com/owner/repo/-/releases/v1.0.0/downloads/package.mcpb", false, ""},
+		{"valid_gitlab_package_files", "https://gitlab.com/owner/repo/-/package_files/123/download", false, ""},
+		{"valid_gitlab_nested_group", "https://gitlab.com/group/subgroup/repo/-/releases/v1.0.0/downloads/package.mcpb", false, ""},
+		{"valid_gitlab_deep_nested", "https://gitlab.com/org/team/project/repo/-/releases/v2.0.0/downloads/server.mcpb", false, ""},
+		
+		// Invalid GitHub URLs (not release URLs)
+		{"invalid_github_root", "https://github.com/owner/repo", true, "GitHub MCPB packages must be release assets"},
+		{"invalid_github_tree", "https://github.com/owner/repo/tree/main", true, "GitHub MCPB packages must be release assets"},
+		{"invalid_github_blob", "https://github.com/owner/repo/blob/main/file.mcpb", true, "GitHub MCPB packages must be release assets"},
+		{"invalid_github_fake_release_path", "https://github.com/owner/repo/fake/releases/download/v1.0.0/file.mcpb", true, "GitHub MCPB packages must be release assets"},
+		{"invalid_github_missing_tag", "https://github.com/owner/repo/releases/download//file.mcpb", true, "GitHub MCPB packages must be release assets"},
+		{"invalid_github_missing_filename", "https://github.com/owner/repo/releases/download/v1.0.0/", true, "GitHub MCPB packages must be release assets"},
+		
+		// Invalid GitLab URLs (not release URLs)
+		{"invalid_gitlab_root", "https://gitlab.com/owner/repo", true, "GitLab MCPB packages must be release assets"},
+		{"invalid_gitlab_tree", "https://gitlab.com/owner/repo/-/tree/main", true, "GitLab MCPB packages must be release assets"},
+		{"invalid_gitlab_blob", "https://gitlab.com/owner/repo/-/blob/main/file.mcpb", true, "GitLab MCPB packages must be release assets"},
+		{"invalid_gitlab_missing_dash_prefix", "https://gitlab.com/owner/repo/releases/v1.0.0/downloads/file.mcpb", true, "GitLab MCPB packages must be release assets"},
+		{"invalid_gitlab_missing_downloads", "https://gitlab.com/owner/repo/-/releases/v1.0.0/file.mcpb", true, "GitLab MCPB packages must be release assets"},
+		{"invalid_gitlab_invalid_package_files", "https://gitlab.com/owner/repo/-/package_files/abc/download", true, "GitLab MCPB packages must be release assets"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := apiv0.ServerJSON{
+				Name:        "com.example/test-server",
+				Description: "Test server",
+				Repository: model.Repository{
+					URL:    "https://github.com/owner/repo",
+					Source: "github",
+					ID:     "owner/repo",
+				},
+				VersionDetail: model.VersionDetail{
+					Version: "1.0.0",
+				},
+				Packages: []model.Package{
+					{
+						RegistryType:    model.RegistryTypeMCPB,
+						RegistryBaseURL: model.RegistryURLGitHub,
+						Identifier:      tc.identifier,
+						TransportType: model.TransportTypeConfig{
+							Type: "stdio",
+						},
+					},
+				},
+				Remotes: []model.Remote{
+					{
+						TransportType: model.TransportTypeConfig{
+							Type: "streamable-http",
+							URL:  "https://example.com/remote",
+						},
+					},
+				},
+			}
+
+			err := validators.ValidateServerJSON(&server)
+			if tc.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tc.errorMsg)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestPackageTransportTypeValidation(t *testing.T) {
+	tests := []struct {
+		name          string
+		transportType model.TransportTypeConfig
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name: "package with stdio transport - should pass",
+			transportType: model.TransportTypeConfig{
+				Type: "stdio",
+			},
+			expectError: false,
+		},
+		{
+			name: "package with streamable-http transport and URL - should pass",
+			transportType: model.TransportTypeConfig{
+				Type: "streamable-http",
+				URL:  "https://api.example.com/mcp",
+			},
+			expectError: false,
+		},
+		{
+			name: "package with streamable-http transport but no URL - should fail",
+			transportType: model.TransportTypeConfig{
+				Type: "streamable-http",
+			},
+			expectError:   true,
+			errorContains: "url is required for streamable-http transport type",
+		},
+		{
+			name: "package with unsupported transport type - should fail",
+			transportType: model.TransportTypeConfig{
+				Type: "websocket",
+			},
+			expectError:   true,
+			errorContains: "unsupported transport type: websocket",
+		},
+		{
+			name: "package with empty transport type - should fail",
+			transportType: model.TransportTypeConfig{
+				Type: "",
+			},
+			expectError:   true,
+			errorContains: "unsupported transport type:",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := apiv0.ServerJSON{
+				Name:        "com.example/test-server",
+				Description: "A test server",
+				Repository: model.Repository{
+					URL:    "https://github.com/owner/repo",
+					Source: "github",
+				},
+				VersionDetail: model.VersionDetail{
+					Version: "1.0.0",
+				},
+				Packages: []model.Package{
+					{
+						Identifier:      "test-package",
+						RegistryType:    "npm",
+						RegistryBaseURL: "https://registry.npmjs.org",
+						TransportType:   tt.transportType,
+					},
+				},
+			}
+
+			err := validators.ValidateServerJSON(&server)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestRemoteTransportTypeValidation(t *testing.T) {
+	tests := []struct {
+		name          string
+		transportType model.TransportTypeConfig
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name: "remote with streamable-http transport and URL - should pass",
+			transportType: model.TransportTypeConfig{
+				Type: "streamable-http",
+				URL:  "https://api.example.com/mcp",
+			},
+			expectError: false,
+		},
+		{
+			name: "remote with streamable-http transport but no URL - should fail",
+			transportType: model.TransportTypeConfig{
+				Type: "streamable-http",
+			},
+			expectError:   true,
+			errorContains: "url is required for streamable-http transport type",
+		},
+		{
+			name: "remote with stdio transport - should fail (not allowed for remotes)",
+			transportType: model.TransportTypeConfig{
+				Type: "stdio",
+			},
+			expectError:   true,
+			errorContains: "unsupported transport type: stdio",
+		},
+		{
+			name: "remote with unsupported transport type - should fail",
+			transportType: model.TransportTypeConfig{
+				Type: "websocket",
+			},
+			expectError:   true,
+			errorContains: "unsupported transport type: websocket",
+		},
+		{
+			name: "remote with empty transport type - should fail",
+			transportType: model.TransportTypeConfig{
+				Type: "",
+			},
+			expectError:   true,
+			errorContains: "unsupported transport type:",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := apiv0.ServerJSON{
+				Name:        "com.example/test-server",
+				Description: "A test server",
+				Repository: model.Repository{
+					URL:    "https://github.com/owner/repo",
+					Source: "github",
+				},
+				VersionDetail: model.VersionDetail{
+					Version: "1.0.0",
+				},
+				Remotes: []model.Remote{
+					{
+						TransportType: tt.transportType,
+					},
+				},
+			}
+
+			err := validators.ValidateServerJSON(&server)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestPackageTemplateURLValidation(t *testing.T) {
+	tests := []struct {
+		name          string
+		pkg           model.Package
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name: "package with template URL referencing environment variable - should pass",
+			pkg: model.Package{
+				Identifier:      "test-package",
+				RegistryType:    "npm",
+				RegistryBaseURL: "https://registry.npmjs.org",
+				TransportType: model.TransportTypeConfig{
+					Type: "streamable-http",
+					URL:  "https://api.{host}/mcp",
+				},
+				EnvironmentVariables: []model.KeyValueInput{
+					{Name: "host", InputWithVariables: model.InputWithVariables{Input: model.Input{Description: "API host"}}},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "package with template URL referencing argument name - should pass",
+			pkg: model.Package{
+				Identifier:      "test-package",
+				RegistryType:    "npm",
+				RegistryBaseURL: "https://registry.npmjs.org",
+				TransportType: model.TransportTypeConfig{
+					Type: "streamable-http",
+					URL:  "https://api.example.com:{port}/mcp",
+				},
+				RuntimeArguments: []model.Argument{
+					{
+						Type: model.ArgumentTypeNamed,
+						Name: "port",
+						InputWithVariables: model.InputWithVariables{Input: model.Input{Description: "API port"}},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "package with template URL referencing argument value_hint - should pass",
+			pkg: model.Package{
+				Identifier:      "test-package",
+				RegistryType:    "npm",
+				RegistryBaseURL: "https://registry.npmjs.org",
+				TransportType: model.TransportTypeConfig{
+					Type: "streamable-http",
+					URL:  "https://api.example.com/{api_endpoint}/mcp",
+				},
+				RuntimeArguments: []model.Argument{
+					{
+						Type:      model.ArgumentTypePositional,
+						ValueHint: "api_endpoint",
+						InputWithVariables: model.InputWithVariables{Input: model.Input{Description: "API endpoint"}},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "package with template URL referencing undefined variable - should fail",
+			pkg: model.Package{
+				Identifier:      "test-package",
+				RegistryType:    "npm",
+				RegistryBaseURL: "https://registry.npmjs.org",
+				TransportType: model.TransportTypeConfig{
+					Type: "streamable-http",
+					URL:  "https://api.{undefined_host}/mcp",
+				},
+				EnvironmentVariables: []model.KeyValueInput{
+					{Name: "host", InputWithVariables: model.InputWithVariables{Input: model.Input{Description: "API host"}}},
+				},
+			},
+			expectError:   true,
+			errorContains: "template variables in URL https://api.{undefined_host}/mcp reference undefined variables",
+		},
+		{
+			name: "package with multiple template variables - should pass when all defined",
+			pkg: model.Package{
+				Identifier:      "test-package",
+				RegistryType:    "npm",
+				RegistryBaseURL: "https://registry.npmjs.org",
+				TransportType: model.TransportTypeConfig{
+					Type: "streamable-http",
+					URL:  "https://{host}:{port}/{path}",
+				},
+				EnvironmentVariables: []model.KeyValueInput{
+					{Name: "host", InputWithVariables: model.InputWithVariables{Input: model.Input{Description: "API host"}}},
+					{Name: "port", InputWithVariables: model.InputWithVariables{Input: model.Input{Description: "API port"}}},
+				},
+				RuntimeArguments: []model.Argument{
+					{
+						Type:      model.ArgumentTypePositional,
+						ValueHint: "path",
+						InputWithVariables: model.InputWithVariables{Input: model.Input{Description: "API path"}},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "package with static URL (no templates) - should pass",
+			pkg: model.Package{
+				Identifier:      "test-package",
+				RegistryType:    "npm",
+				RegistryBaseURL: "https://registry.npmjs.org",
+				TransportType: model.TransportTypeConfig{
+					Type: "streamable-http",
+					URL:  "https://api.example.com/mcp",
+				},
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := apiv0.ServerJSON{
+				Name:        "com.example/test-server",
+				Description: "A test server",
+				Repository: model.Repository{
+					URL:    "https://github.com/owner/repo",
+					Source: "github",
+				},
+				VersionDetail: model.VersionDetail{
+					Version: "1.0.0",
+				},
+				Packages: []model.Package{tt.pkg},
+			}
+
+			err := validators.ValidateServerJSON(&server)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestRemoteTemplateURLValidation(t *testing.T) {
+	tests := []struct {
+		name          string
+		remote        model.Remote
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name: "remote with static URL - should pass",
+			remote: model.Remote{
+				TransportType: model.TransportTypeConfig{
+					Type: "streamable-http",
+					URL:  "https://api.example.com/mcp",
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "remote with template URL - should fail (templates not allowed)",
+			remote: model.Remote{
+				TransportType: model.TransportTypeConfig{
+					Type: "streamable-http",
+					URL:  "https://api.{host}/mcp",
+				},
+			},
+			expectError:   true,
+			errorContains: "template variables are not supported in remote URLs",
+		},
+		{
+			name: "remote with multiple template variables - should fail",
+			remote: model.Remote{
+				TransportType: model.TransportTypeConfig{
+					Type: "streamable-http",
+					URL:  "https://{host}:{port}/{path}",
+				},
+			},
+			expectError:   true,
+			errorContains: "template variables are not supported in remote URLs",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := apiv0.ServerJSON{
+				Name:        "com.example/test-server",
+				Description: "A test server",
+				Repository: model.Repository{
+					URL:    "https://github.com/owner/repo",
+					Source: "github",
+				},
+				VersionDetail: model.VersionDetail{
+					Version: "1.0.0",
+				},
+				Remotes: []model.Remote{tt.remote},
+			}
+
+			err := validators.ValidateServerJSON(&server)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
 	}
 }
