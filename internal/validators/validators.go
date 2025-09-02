@@ -67,11 +67,6 @@ func validatePackageField(obj *model.Package) error {
 		return ErrPackageNameHasSpaces
 	}
 
-	// Validate transport type
-	if err := validateTransportType(obj.TransportType); err != nil {
-		return fmt.Errorf("invalid transport type: %w", err)
-	}
-
 	// Validate runtime arguments
 	for _, arg := range obj.RuntimeArguments {
 		if err := validateArgument(&arg); err != nil {
@@ -84,6 +79,12 @@ func validatePackageField(obj *model.Package) error {
 		if err := validateArgument(&arg); err != nil {
 			return fmt.Errorf("invalid package argument: %w", err)
 		}
+	}
+
+	// Validate transport type with template variable support
+	availableVariables := collectAvailableVariables(obj)
+	if err := validatePackageTransportType(obj.TransportType, availableVariables); err != nil {
+		return fmt.Errorf("invalid transport type: %w", err)
 	}
 
 	return nil
@@ -135,7 +136,40 @@ func validateArgumentValueFields(name, value, defaultValue string) error {
 	return nil
 }
 
-func validateTransportType(transport model.TransportTypeConfig) error {
+// collectAvailableVariables collects all available template variables from a package
+func collectAvailableVariables(pkg *model.Package) []string {
+	var variables []string
+	
+	// Add environment variable names
+	for _, env := range pkg.EnvironmentVariables {
+		variables = append(variables, env.Name)
+	}
+	
+	// Add runtime argument names and value hints
+	for _, arg := range pkg.RuntimeArguments {
+		if arg.Name != "" {
+			variables = append(variables, arg.Name)
+		}
+		if arg.ValueHint != "" {
+			variables = append(variables, arg.ValueHint)
+		}
+	}
+	
+	// Add package argument names and value hints
+	for _, arg := range pkg.PackageArguments {
+		if arg.Name != "" {
+			variables = append(variables, arg.Name)
+		}
+		if arg.ValueHint != "" {
+			variables = append(variables, arg.ValueHint)
+		}
+	}
+	
+	return variables
+}
+
+// validatePackageTransportType validates transport type for packages (allows templates)
+func validatePackageTransportType(transport model.TransportTypeConfig, availableVariables []string) error {
 	// Validate transport type is supported
 	switch transport.Type {
 	case model.TransportTypeStdio:
@@ -146,8 +180,42 @@ func validateTransportType(transport model.TransportTypeConfig) error {
 		if transport.URL == "" {
 			return fmt.Errorf("url is required for %s transport type", model.TransportTypeStreamableHTTP)
 		}
-		// Validate URL format
-		if !IsValidURL(transport.URL) {
+		// Validate URL format with template variable support
+		if !IsValidTemplatedURL(transport.URL, availableVariables, true) {
+			// Check if it's a template variable issue or basic URL issue
+			templateVars := extractTemplateVariables(transport.URL)
+			if len(templateVars) > 0 {
+				return fmt.Errorf("%w: template variables in URL %s reference undefined variables. Available variables: %v", 
+					ErrInvalidRemoteURL, transport.URL, availableVariables)
+			}
+			return fmt.Errorf("%w: %s", ErrInvalidRemoteURL, transport.URL)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported transport type: %s", transport.Type)
+	}
+}
+
+// validateRemoteTransportType validates transport type for remotes (no templates allowed)
+func validateRemoteTransportType(transport model.TransportTypeConfig) error {
+	// Validate transport type is supported
+	switch transport.Type {
+	case model.TransportTypeStdio:
+		// No additional validation needed for stdio
+		return nil
+	case model.TransportTypeStreamableHTTP:
+		// URL is required for streamable-http
+		if transport.URL == "" {
+			return fmt.Errorf("url is required for %s transport type", model.TransportTypeStreamableHTTP)
+		}
+		// Validate URL format without template variable support
+		if !IsValidTemplatedURL(transport.URL, nil, false) {
+			// Check if it contains templates (which are not allowed)
+			templateVars := extractTemplateVariables(transport.URL)
+			if len(templateVars) > 0 {
+				return fmt.Errorf("%w: template variables are not supported in remote URLs: %s", 
+					ErrInvalidRemoteURL, transport.URL)
+			}
 			return fmt.Errorf("%w: %s", ErrInvalidRemoteURL, transport.URL)
 		}
 		return nil
@@ -157,7 +225,7 @@ func validateTransportType(transport model.TransportTypeConfig) error {
 }
 
 func validateRemote(obj *model.Remote) error {
-	return validateTransportType(obj.TransportType)
+	return validateRemoteTransportType(obj.TransportType)
 }
 
 // ValidatePublishRequest validates a complete publish request including extensions
