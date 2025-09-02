@@ -326,10 +326,9 @@ components:
           items:
             $ref: '#/components/schemas/KeyValueInput'
         transport_type:
-          type: string
-          enum: [ streamable-http, sse, stdio ]
-          description: Transport protocol type
-          example: "stdio"
+          anyOf:
+            - $ref: '#/components/schemas/StdioTransport'
+            - $ref: '#/components/schemas/StreamableHttpTransport'
 
     Input:
       type: object
@@ -448,23 +447,9 @@ components:
       type: object
       required:
         - transport_type
-        - url
       properties:
         transport_type:
-          type: string
-          enum: [streamable-http, sse]
-          description: Transport protocol type
-          example: "sse"
-        url:
-          type: string
-          format: uri
-          description: Remote server URL
-          example: "https://mcp-fs.example.com/sse"
-        headers:
-          type: array
-          description: HTTP headers to include
-          items:
-            $ref: '#/components/schemas/KeyValueInput'
+          $ref: '#/components/schemas/StreamableHttpTransport'
 
     ServerDetail:
       description: Schema for a static representation of an MCP server. Used in various contexts related to discovery, installation, and configuration.
@@ -535,3 +520,36 @@ components:
                       example: "2023-12-01T10:30:00Z"
                   additionalProperties: false
               additionalProperties: true
+
+    StdioTransport:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [stdio]
+          example: "stdio"
+      required:
+        - type
+
+    StreamableHttpTransport:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [streamable-http]
+          example: "streamable-http"
+        url:
+          type: string
+          format: uri
+          example: "http://{host}:{port}/mcp"
+          description: |
+            URL template for streamable HTTP connection. Variables in {curly_braces} 
+            reference argument value_hints, argument names, or environment variable names.
+        headers:
+          type: array
+          description: HTTP headers with template variable support
+          items:
+            $ref: '#/components/schemas/KeyValueInput'
+      required:
+        - type
+        - url
