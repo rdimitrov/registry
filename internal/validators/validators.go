@@ -196,13 +196,10 @@ func validatePackageTransportType(transport model.TransportTypeConfig, available
 	}
 }
 
-// validateRemoteTransportType validates transport type for remotes (no templates allowed)
+// validateRemoteTransportType validates transport type for remotes (only streamable-http allowed)
 func validateRemoteTransportType(transport model.TransportTypeConfig) error {
-	// Validate transport type is supported
+	// Validate transport type is supported - remotes only support streamable-http
 	switch transport.Type {
-	case model.TransportTypeStdio:
-		// No additional validation needed for stdio
-		return nil
 	case model.TransportTypeStreamableHTTP:
 		// URL is required for streamable-http
 		if transport.URL == "" {

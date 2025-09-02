@@ -294,6 +294,9 @@ func createServerJSON(
 		Identifier:           packageIdentifier,
 		Version:              packageVersion,
 		EnvironmentVariables: envVars,
+		TransportType: model.TransportTypeConfig{
+			Type: model.TransportTypeStdio,
+		},
 	}
 
 	// Create server structure
