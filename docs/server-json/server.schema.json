@@ -118,14 +118,15 @@
           ]
         },
         "transport_type": {
-          "type": "string",
-          "enum": [
-            "streamable-http",
-            "sse",
-            "stdio"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StdioTransport"
+            },
+            {
+              "$ref": "#/$defs/StreamableHttpTransport"
+            }
           ],
-          "description": "Transport protocol type for the package",
-          "example": "stdio"
+          "description": "Transport protocol configuration for the package"
         },
         "runtime_arguments": {
           "type": "array",
@@ -323,27 +324,42 @@
         }
       ]
     },
-    "Remote": {
+    "StdioTransport": {
       "type": "object",
       "required": [
-        "transport_type",
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "stdio"
+          ],
+          "description": "Transport type",
+          "example": "stdio"
+        }
+      }
+    },
+    "StreamableHttpTransport": {
+      "type": "object",
+      "required": [
+        "type",
         "url"
       ],
       "properties": {
-        "transport_type": {
+        "type": {
           "type": "string",
           "enum": [
-            "streamable-http",
-            "sse"
+            "streamable-http"
           ],
-          "description": "Transport protocol type",
-          "example": "sse"
+          "description": "Transport type",
+          "example": "streamable-http"
         },
         "url": {
           "type": "string",
           "format": "uri",
-          "description": "Remote server URL",
-          "example": "https://mcp-fs.example.com/sse"
+          "description": "URL for the streamable-http transport",
+          "example": "https://api.example.com/mcp"
         },
         "headers": {
           "type": "array",
@@ -351,6 +367,25 @@
           "items": {
             "$ref": "#/$defs/KeyValueInput"
           }
+        }
+      }
+    },
+    "Remote": {
+      "type": "object",
+      "required": [
+        "transport_type"
+      ],
+      "properties": {
+        "transport_type": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StdioTransport"
+            },
+            {
+              "$ref": "#/$defs/StreamableHttpTransport"
+            }
+          ],
+          "description": "Transport protocol configuration"
         }
       }
     },

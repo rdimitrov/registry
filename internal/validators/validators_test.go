@@ -35,6 +35,9 @@ func TestValidate(t *testing.T) {
 						Identifier:      "test-package",
 						RegistryType:    "npm",
 						RegistryBaseURL: "https://registry.npmjs.org",
+						TransportType: model.TransportTypeConfig{
+							Type: "stdio",
+						},
 					},
 				},
 				Remotes: []model.Remote{
@@ -110,6 +113,9 @@ func TestValidate(t *testing.T) {
 						Identifier:      "test package with spaces",
 						RegistryType:    "npm",
 						RegistryBaseURL: "https://registry.npmjs.org",
+						TransportType: model.TransportTypeConfig{
+							Type: "stdio",
+						},
 					},
 				},
 			},
@@ -132,11 +138,17 @@ func TestValidate(t *testing.T) {
 						Identifier:      "valid-package",
 						RegistryType:    "npm",
 						RegistryBaseURL: "https://registry.npmjs.org",
+						TransportType: model.TransportTypeConfig{
+							Type: "stdio",
+						},
 					},
 					{
 						Identifier:      "invalid package", // Has space
 						RegistryType:    "pypi",
 						RegistryBaseURL: "https://pypi.org",
+						TransportType: model.TransportTypeConfig{
+							Type: "stdio",
+						},
 					},
 				},
 			},
@@ -794,6 +806,9 @@ func createValidServerWithArgument(arg model.Argument) apiv0.ServerJSON {
 				RegistryType:     "npm",
 				RegistryBaseURL:  "https://registry.npmjs.org",
 				RuntimeArguments: []model.Argument{arg},
+				TransportType: model.TransportTypeConfig{
+					Type: "stdio",
+				},
 			},
 		},
 		Remotes: []model.Remote{
