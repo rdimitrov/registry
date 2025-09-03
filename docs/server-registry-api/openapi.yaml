@@ -540,11 +540,11 @@ components:
           example: "streamable-http"
         url:
           type: string
-          format: uri
           example: "http://{host}:{port}/mcp"
           description: |
             URL template for streamable HTTP connection. Variables in {curly_braces} 
             reference argument value_hints, argument names, or environment variable names.
+            After variable substitution, this should produce a valid URI.
         headers:
           type: array
           description: HTTP headers with template variable support

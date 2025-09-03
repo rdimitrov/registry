@@ -357,8 +357,7 @@
         },
         "url": {
           "type": "string",
-          "format": "uri",
-          "description": "URL for the streamable-http transport",
+          "description": "URL template for the streamable-http transport. Variables in {curly_braces} reference argument value_hints, argument names, or environment variable names. After variable substitution, this should produce a valid URI.",
           "example": "https://api.example.com/mcp"
         },
         "headers": {
