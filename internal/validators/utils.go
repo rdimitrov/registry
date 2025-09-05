@@ -84,7 +84,7 @@ func IsValidURL(rawURL string) bool {
 		return false
 	}
 
-	if u.Host == "" || u.Hostname() == "localhost" {
+	if u.Host == "" {
 		return false
 	}
 	return true

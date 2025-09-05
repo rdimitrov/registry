@@ -14,6 +14,7 @@ var (
 	ErrInvalidRemoteURL = errors.New("invalid remote URL")
 
 	// Registry validation errors
+	ErrUnsupportedRegistryType      = errors.New("unsupported registry type")
 	ErrUnsupportedRegistryBaseURL   = errors.New("unsupported registry base URL")
 	ErrMismatchedRegistryTypeAndURL = errors.New("registry type and base URL do not match")
 

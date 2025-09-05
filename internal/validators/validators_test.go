@@ -215,11 +215,14 @@ func TestValidate(t *testing.T) {
 				},
 				Remotes: []model.Remote{
 					{
-						URL: "http://localhost",
+						TransportType: model.TransportTypeConfig{
+							Type: "streamable-http",
+							URL:  "http://localhost",
+						},
 					},
 				},
 			},
-			expectedError: validators.ErrInvalidRemoteURL.Error(),
+			expectedError: "",
 		},
 		{
 			name: "remote with localhost url with port",
@@ -235,11 +238,14 @@ func TestValidate(t *testing.T) {
 				},
 				Remotes: []model.Remote{
 					{
-						URL: "http://localhost:3000",
+						TransportType: model.TransportTypeConfig{
+							Type: "streamable-http",
+							URL:  "http://localhost:3000",
+						},
 					},
 				},
 			},
-			expectedError: validators.ErrInvalidRemoteURL.Error(),
+			expectedError: "",
 		},
 		{
 			name: "multiple remotes with one invalid",
@@ -917,7 +923,6 @@ func TestValidate_EmptyRegistryType(t *testing.T) {
 	assert.Contains(t, err.Error(), "registry type is required")
 }
 
->>>>>>> 13139f6 (Add unit tests for the transport type property)
 func createValidServerWithArgument(arg model.Argument) apiv0.ServerJSON {
 	return apiv0.ServerJSON{
 		Name:        "com.example/test-server",
