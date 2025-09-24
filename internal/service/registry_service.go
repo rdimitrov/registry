@@ -30,7 +30,7 @@ func NewRegistryService(db database.Database, cfg *config.Config) RegistryServic
 }
 
 // List returns registry entries with cursor-based pagination and optional filtering
-func (s *registryServiceImpl) List(filter *database.ServerFilter, cursor string, limit int) ([]apiv0.ServerJSON, string, error) {
+func (s *registryServiceImpl) List(filter *database.ServerFilter, cursor string, limit int) ([]*apiv0.ServerResponse, string, error) {
 	// Create a timeout context for the database operation
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -46,17 +46,12 @@ func (s *registryServiceImpl) List(filter *database.ServerFilter, cursor string,
 		return nil, "", err
 	}
 
-	// Return ServerJSONs directly
-	result := make([]apiv0.ServerJSON, len(serverRecords))
-	for i, record := range serverRecords {
-		result[i] = *record
-	}
-
-	return result, nextCursor, nil
+	// Return ServerResponse records directly
+	return serverRecords, nextCursor, nil
 }
 
 // GetByVersionID retrieves a specific server by its registry metadata version ID
-func (s *registryServiceImpl) GetByVersionID(versionID string) (*apiv0.ServerJSON, error) {
+func (s *registryServiceImpl) GetByVersionID(versionID string) (*apiv0.ServerResponse, error) {
 	// Create a timeout context for the database operation
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -71,7 +66,7 @@ func (s *registryServiceImpl) GetByVersionID(versionID string) (*apiv0.ServerJSO
 }
 
 // GetByServerID retrieves the latest version of a server by its server ID
-func (s *registryServiceImpl) GetByServerID(serverID string) (*apiv0.ServerJSON, error) {
+func (s *registryServiceImpl) GetByServerID(serverID string) (*apiv0.ServerResponse, error) {
 	// Create a timeout context for the database operation
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -86,7 +81,7 @@ func (s *registryServiceImpl) GetByServerID(serverID string) (*apiv0.ServerJSON,
 }
 
 // GetByServerIDAndVersion retrieves a specific version of a server by server ID and version
-func (s *registryServiceImpl) GetByServerIDAndVersion(serverID string, version string) (*apiv0.ServerJSON, error) {
+func (s *registryServiceImpl) GetByServerIDAndVersion(serverID string, version string) (*apiv0.ServerResponse, error) {
 	// Create a timeout context for the database operation
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
