@@ -60,7 +60,7 @@ func TestImportService_LocalFile(t *testing.T) {
 	servers, _, err := testDB.List(context.Background(), nil, "", 10)
 	require.NoError(t, err)
 	assert.Len(t, servers, 1)
-	assert.Equal(t, "io.github.test/test-server-1", servers[0].Name)
+	assert.Equal(t, "io.github.test/test-server-1", servers[0].Server.Name)
 }
 
 func TestImportService_HTTPFile(t *testing.T) {
@@ -104,7 +104,7 @@ func TestImportService_HTTPFile(t *testing.T) {
 	servers, _, err := testDB.List(context.Background(), nil, "", 10)
 	require.NoError(t, err)
 	assert.Len(t, servers, 1)
-	assert.Equal(t, "io.github.test/http-test-server", servers[0].Name)
+	assert.Equal(t, "io.github.test/http-test-server", servers[0].Server.Name)
 }
 
 func TestImportService_RegistryAPI(t *testing.T) {
@@ -191,7 +191,7 @@ func TestImportService_RegistryAPI(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, servers, 2)
 
-	names := []string{servers[0].Name, servers[1].Name}
+	names := []string{servers[0].Server.Name, servers[1].Server.Name}
 	assert.Contains(t, names, "io.github.test/api-server-1")
 	assert.Contains(t, names, "io.github.test/api-server-2")
 }

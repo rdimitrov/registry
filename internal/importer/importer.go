@@ -35,9 +35,31 @@ func (s *Service) ImportFromPath(ctx context.Context, path string) error {
 		return fmt.Errorf("failed to read seed data: %w", err)
 	}
 
-	// Import each server using CreateServer
+	// Import each server using CreateServer with new interface
 	for _, server := range servers {
-		_, err := s.db.CreateServer(ctx, server)
+		// Extract server metadata for the new interface
+		var serverID, versionID string
+		isLatest := true
+
+		if server.Meta != nil && server.Meta.Official != nil {
+			serverID = server.Meta.Official.ServerID
+			versionID = server.Meta.Official.VersionID
+			isLatest = server.Meta.Official.IsLatest
+		}
+
+		// Generate IDs if not present
+		if serverID == "" {
+			return fmt.Errorf("server %s missing serverID in metadata", server.Name)
+		}
+		if versionID == "" {
+			return fmt.Errorf("server %s missing versionID in metadata", server.Name)
+		}
+
+		// Create clean server.json without registry metadata
+		cleanServer := *server
+		cleanServer.Meta = nil // Remove all metadata - it goes to separate storage
+
+		_, err := s.db.CreateServer(ctx, &cleanServer, serverID, versionID, isLatest)
 		if err != nil {
 			return fmt.Errorf("failed to import server %s: %w", server.Name, err)
 		}

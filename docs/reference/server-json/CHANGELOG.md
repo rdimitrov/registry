@@ -2,6 +2,28 @@
 
 Changes to the server.json schema and format.
 
+## 2025-09-22
+
+### ⚠️ BREAKING CHANGES
+
+#### Status Field Removal: Immutable server.json
+
+The `status` field has been **removed** from server.json schema. Server lifecycle status is now managed by the registry independently from the immutable server configuration.
+
+**What changed:**
+- `status` field removed from server.json
+- Server.json is now immutable - cannot be modified after publishing
+- Registry metadata (status, timestamps) managed separately from server configuration
+- Schema version updated to `2025-09-22`
+
+**Migration required:**
+- Remove `status` field from your server.json files
+- Update `$schema` to `https://static.modelcontextprotocol.io/schemas/2025-09-22/server.schema.json`
+
+### Changed
+- Schema version: `2025-09-16` → `2025-09-22`
+- Removed `status` field from server.json schema
+
 ## 2025-09-16
 
 ### ⚠️ BREAKING CHANGES
@@ -116,10 +138,10 @@ All JSON field names standardized to camelCase. **All existing `server.json` fil
 
 #### Updated Schema Reference
 
-🔗 **Current schema**: https://static.modelcontextprotocol.io/schemas/2025-09-16/server.schema.json
+🔗 **Current schema**: https://static.modelcontextprotocol.io/schemas/2025-09-22/server.schema.json
 
 ### Changed
-- Schema version: `2025-07-09` → `2025-09-16`
+- Schema version: `2025-09-16` → `2025-09-22`
 
 ## 2025-07-09
 

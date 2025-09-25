@@ -143,16 +143,16 @@ func TestGetByServerID(t *testing.T) {
 		serverID    string
 		expectError bool
 		errorMsg    string
-		checkResult func(*testing.T, *apiv0.ServerJSON)
+		checkResult func(*testing.T, *apiv0.ServerResponse)
 	}{
 		{
 			name:        "get latest version by server ID",
 			serverID:    server1.Meta.Official.ServerID,
 			expectError: false,
-			checkResult: func(t *testing.T, result *apiv0.ServerJSON) {
+			checkResult: func(t *testing.T, result *apiv0.ServerResponse) {
 				t.Helper()
-				assert.Equal(t, "2.0.0", result.Version) // Should get latest version
-				assert.Equal(t, "Test server v2", result.Description)
+				assert.Equal(t, "2.0.0", result.Server.Version) // Should get latest version
+				assert.Equal(t, "Test server v2", result.Server.Description)
 				assert.True(t, result.Meta.Official.IsLatest)
 			},
 		},
@@ -215,17 +215,17 @@ func TestGetByServerIDAndVersion(t *testing.T) {
 		version     string
 		expectError bool
 		errorMsg    string
-		checkResult func(*testing.T, *apiv0.ServerJSON)
+		checkResult func(*testing.T, *apiv0.ServerResponse)
 	}{
 		{
 			name:        "get specific version 1.0.0",
 			serverID:    server1.Meta.Official.ServerID,
 			version:     "1.0.0",
 			expectError: false,
-			checkResult: func(t *testing.T, result *apiv0.ServerJSON) {
+			checkResult: func(t *testing.T, result *apiv0.ServerResponse) {
 				t.Helper()
-				assert.Equal(t, "1.0.0", result.Version)
-				assert.Equal(t, "Versioned server v1", result.Description)
+				assert.Equal(t, "1.0.0", result.Server.Version)
+				assert.Equal(t, "Versioned server v1", result.Server.Description)
 				assert.False(t, result.Meta.Official.IsLatest)
 			},
 		},
@@ -234,10 +234,10 @@ func TestGetByServerIDAndVersion(t *testing.T) {
 			serverID:    server1.Meta.Official.ServerID,
 			version:     "2.0.0",
 			expectError: false,
-			checkResult: func(t *testing.T, result *apiv0.ServerJSON) {
+			checkResult: func(t *testing.T, result *apiv0.ServerResponse) {
 				t.Helper()
-				assert.Equal(t, "2.0.0", result.Version)
-				assert.Equal(t, "Versioned server v2", result.Description)
+				assert.Equal(t, "2.0.0", result.Server.Version)
+				assert.Equal(t, "Versioned server v2", result.Server.Description)
 				assert.True(t, result.Meta.Official.IsLatest)
 			},
 		},
@@ -315,13 +315,13 @@ func TestGetAllVersionsByServerID(t *testing.T) {
 		serverID    string
 		expectError bool
 		errorMsg    string
-		checkResult func(*testing.T, []apiv0.ServerJSON)
+		checkResult func(*testing.T, []*apiv0.ServerResponse)
 	}{
 		{
 			name:        "get all versions of server",
 			serverID:    server1.Meta.Official.ServerID,
 			expectError: false,
-			checkResult: func(t *testing.T, result []apiv0.ServerJSON) {
+			checkResult: func(t *testing.T, result []*apiv0.ServerResponse) {
 				t.Helper()
 				assert.Len(t, result, 3)
 
@@ -329,9 +329,9 @@ func TestGetAllVersionsByServerID(t *testing.T) {
 				versions := make([]string, 0, len(result))
 				latestCount := 0
 				for _, server := range result {
-					versions = append(versions, server.Version)
+					versions = append(versions, server.Server.Version)
 					assert.Equal(t, server1.Meta.Official.ServerID, server.Meta.Official.ServerID)
-					assert.Equal(t, "com.example/multi-version-server", server.Name)
+					assert.Equal(t, "com.example/multi-version-server", server.Server.Name)
 					if server.Meta.Official.IsLatest {
 						latestCount++
 					}
@@ -385,7 +385,7 @@ func TestPublishConcurrentVersionsNoRace(t *testing.T) {
 	service := NewRegistryService(testDB, &config.Config{EnableRegistryValidation: false})
 
 	const concurrency = 1 // @Maintainers: Fix this and increase to higher number, previously 100
-	results := make([]*apiv0.ServerJSON, concurrency)
+	results := make([]*apiv0.ServerResponse, concurrency)
 	errors := make([]error, concurrency)
 
 	var wg sync.WaitGroup
@@ -410,7 +410,7 @@ func TestPublishConcurrentVersionsNoRace(t *testing.T) {
 
 	var sharedServerID string
 	for i, result := range results {
-		if result != nil && result.Meta != nil && result.Meta.Official != nil {
+		if result != nil && result.Meta.Official != nil {
 			if sharedServerID == "" {
 				sharedServerID = result.Meta.Official.ServerID
 			}
@@ -421,7 +421,7 @@ func TestPublishConcurrentVersionsNoRace(t *testing.T) {
 
 	latestCount := 0
 	for _, result := range results {
-		if result != nil && result.Meta != nil && result.Meta.Official != nil &&
+		if result != nil && result.Meta.Official != nil &&
 			result.Meta.Official.IsLatest {
 			latestCount++
 		}

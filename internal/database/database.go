@@ -44,6 +44,8 @@ type Database interface {
 	CreateServer(ctx context.Context, server *apiv0.ServerJSON, serverID, versionID string, isLatest bool) (*apiv0.ServerResponse, error)
 	// UpdateServer updates an existing server record
 	UpdateServer(ctx context.Context, id string, server *apiv0.ServerJSON) (*apiv0.ServerResponse, error)
+	// UpdateIsLatest updates the isLatest flag for a specific version
+	UpdateIsLatest(ctx context.Context, versionID string, isLatest bool) error
 	// WithPublishLock executes a function with an exclusive lock for publishing a server
 	// This prevents race conditions when multiple versions are published concurrently
 	WithPublishLock(ctx context.Context, serverName string, fn func(ctx context.Context) error) error

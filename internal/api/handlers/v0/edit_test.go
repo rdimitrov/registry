@@ -28,7 +28,6 @@ func TestEditServerEndpoint(t *testing.T) {
 	testServer := apiv0.ServerJSON{
 		Name:        "io.github.domdomegg/test-server",
 		Description: "Original test server",
-		Status:      model.StatusActive,
 		Repository: model.Repository{
 			URL:    "https://github.com/domdomegg/test-server",
 			Source: "github",
@@ -48,7 +47,6 @@ func TestEditServerEndpoint(t *testing.T) {
 	otherServer := apiv0.ServerJSON{
 		Name:        "io.github.other/test-server",
 		Description: "Other test server",
-		Status:      model.StatusActive,
 		Repository: model.Repository{
 			URL:    "https://github.com/other/test-server",
 			Source: "github",
@@ -68,7 +66,6 @@ func TestEditServerEndpoint(t *testing.T) {
 	deletedServer := apiv0.ServerJSON{
 		Name:        "io.github.domdomegg/deleted-server",
 		Description: "Deleted test server",
-		Status:      model.StatusDeleted,
 		Repository: model.Repository{
 			URL:    "https://github.com/domdomegg/deleted-server",
 			Source: "github",
@@ -109,7 +106,6 @@ func TestEditServerEndpoint(t *testing.T) {
 			requestBody: apiv0.ServerJSON{
 				Name:        "io.github.domdomegg/test-server",
 				Description: "Updated test server",
-				Status:      model.StatusDeprecated,
 				Repository: model.Repository{
 					URL:    "https://github.com/domdomegg/test-server",
 					Source: "github",
@@ -249,7 +245,7 @@ func TestEditServerEndpoint(t *testing.T) {
 			expectedError:  "Bad Request",
 		},
 		{
-			name: "cannot undelete server",
+			name: "edit deleted server should succeed (status managed at registry level)",
 			authHeader: func() string {
 				cfg := &config.Config{JWTPrivateKey: "bb2c6b424005acd5df47a9e2c87f446def86dd740c888ea3efb825b23f7ef47c"}
 				token, _ := generateTestJWTToken(cfg, auth.JWTClaims{
@@ -263,19 +259,17 @@ func TestEditServerEndpoint(t *testing.T) {
 			}(),
 			requestBody: apiv0.ServerJSON{
 				Name:        "io.github.domdomegg/deleted-server",
-				Description: "Trying to undelete server",
-				Status:      model.StatusActive,
-				Repository: model.Repository{
+				Description: "Updated deleted server",
+						Repository: model.Repository{
 					URL:    "https://github.com/domdomegg/deleted-server",
 					Source: "github",
 					ID:     "domdomegg/deleted-server",
 				},
-				Version: "1.0.1",
+				Version: "1.0.0",
 			},
 			serverID:       deletedServerID,
 			version:        "1.0.0",
-			expectedStatus: http.StatusBadRequest,
-			expectedError:  "Cannot change status of deleted server",
+			expectedStatus: http.StatusOK,
 		},
 	}
 

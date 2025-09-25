@@ -2,7 +2,7 @@
 
 Changes to the REST API endpoints and responses.
 
-## 2025-09-16
+## 2025-09-22
 
 ### ⚠️ BREAKING CHANGES
 
@@ -63,7 +63,7 @@ API endpoints updated for consistent server identification across versions.
 - [ ] Test with new API responses
 
 ### Changed
-- OpenAPI spec version: `2025-07-09` → `2025-09-16`
+- OpenAPI spec version: `2025-07-09` → `2025-09-22`
 
 ## 2025-07-09
 

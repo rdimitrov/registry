@@ -354,8 +354,9 @@ func ValidatePublishRequest(req apiv0.ServerJSON, cfg *config.Config) error {
 		return err
 	}
 
-	// Validate registry ownership for all packages if validation is enabled and server is not deleted
-	if cfg.EnableRegistryValidation && req.Status != model.StatusDeleted {
+	// Validate registry ownership for all packages if validation is enabled
+	// Status is now handled at registry metadata level, so always validate active packages
+	if cfg.EnableRegistryValidation {
 		ctx := context.Background()
 		for i, pkg := range req.Packages {
 			if err := ValidatePackage(ctx, pkg, req.Name); err != nil {

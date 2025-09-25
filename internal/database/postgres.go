@@ -63,7 +63,6 @@ func NewPostgreSQL(ctx context.Context, connectionURI string) (*PostgreSQL, erro
 	}, nil
 }
 
-//nolint:cyclop // Database filtering logic is inherently complex but clear
 func (db *PostgreSQL) List(
 	ctx context.Context,
 	filter *ServerFilter,
@@ -429,17 +428,54 @@ func (db *PostgreSQL) CreateServer(ctx context.Context, server *apiv0.ServerJSON
 		return nil, fmt.Errorf("failed to marshal server JSON: %w", err)
 	}
 
-	// Insert into servers table with new separated schema
-	query := `
+	// Use a single transaction with proper constraint handling
+	tx, err := db.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// Use a more robust approach: first insert without is_latest, then update the latest flags
+	// Insert the new server version (always as non-latest first)
+	insertQuery := `
 		INSERT INTO servers (version_id, server_id, status, published_at, updated_at, is_latest, server_json)
-		VALUES ($1, $2, $3, NOW(), NOW(), $4, $5)
+		VALUES ($1, $2, $3, NOW(), NOW(), false, $4)
 		RETURNING published_at, updated_at
 	`
 
 	var publishedAt, updatedAt time.Time
-	err = db.pool.QueryRow(ctx, query, versionID, serverID, "active", isLatest, serverJSON).Scan(&publishedAt, &updatedAt)
+	err = tx.QueryRow(ctx, insertQuery, versionID, serverID, "active", serverJSON).Scan(&publishedAt, &updatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to insert server: %w", err)
+	}
+
+	// Now update the latest flags if this version should be latest
+	if isLatest {
+		// First, unset all existing latest flags for this server
+		_, err = tx.Exec(ctx, `
+			UPDATE servers
+			SET is_latest = false, updated_at = CURRENT_TIMESTAMP
+			WHERE server_id = $1 AND is_latest = true
+		`, serverID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unset existing latest versions: %w", err)
+		}
+
+		// Then set this version as latest
+		_, err = tx.Exec(ctx, `
+			UPDATE servers
+			SET is_latest = true, updated_at = CURRENT_TIMESTAMP
+			WHERE version_id = $1
+		`, versionID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to set version as latest: %w", err)
+		}
+	}
+
+	// Commit the transaction
+	err = tx.Commit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	// Return the ServerResponse format
@@ -563,6 +599,21 @@ func hashServerName(name string) int64 {
 	// Use only 63 bits to ensure positive int64
 	//nolint:gosec // Intentional conversion with masking to 63 bits
 	return int64(hash & 0x7FFFFFFFFFFFFFFF)
+}
+
+// UpdateIsLatest updates the isLatest flag for a specific version
+func (db *PostgreSQL) UpdateIsLatest(ctx context.Context, versionID string, isLatest bool) error {
+	_, err := db.pool.Exec(ctx, `
+		UPDATE servers
+		SET is_latest = $1, updated_at = CURRENT_TIMESTAMP
+		WHERE version_id = $2
+	`, isLatest, versionID)
+
+	if err != nil {
+		return fmt.Errorf("failed to update isLatest flag: %w", err)
+	}
+
+	return nil
 }
 
 // Close closes the database connection
