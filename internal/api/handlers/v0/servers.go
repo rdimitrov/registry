@@ -100,12 +100,18 @@ func RegisterServersEndpoints(api huma.API, registry service.RegistryService) {
 			return nil, huma.Error500InternalServerError("Failed to get registry list", err)
 		}
 
+		// Convert from []*ServerResponse to []ServerResponse for API response
+		serverList := make([]apiv0.ServerResponse, len(servers))
+		for i, server := range servers {
+			serverList[i] = *server
+		}
+
 		return &Response[apiv0.ServerListResponse]{
 			Body: apiv0.ServerListResponse{
-				Servers: servers,
+				Servers: serverList,
 				Metadata: apiv0.Metadata{
 					NextCursor: nextCursor,
-					Count:      len(servers),
+					Count:      len(serverList),
 				},
 			},
 		}, nil
@@ -152,11 +158,17 @@ func RegisterServersEndpoints(api huma.API, registry service.RegistryService) {
 			return nil, huma.Error500InternalServerError("Failed to get server versions", err)
 		}
 
+		// Convert from []*ServerResponse to []ServerResponse for API response
+		serverList := make([]apiv0.ServerResponse, len(servers))
+		for i, server := range servers {
+			serverList[i] = *server
+		}
+
 		return &Response[apiv0.ServerListResponse]{
 			Body: apiv0.ServerListResponse{
-				Servers: servers,
+				Servers: serverList,
 				Metadata: apiv0.Metadata{
-					Count: len(servers),
+					Count: len(serverList),
 				},
 			},
 		}, nil
@@ -178,6 +190,66 @@ func RegisterServersEndpoints(api huma.API, registry service.RegistryService) {
 				return nil, huma.Error404NotFound("Server version not found")
 			}
 			return nil, huma.Error500InternalServerError("Failed to get server version", err)
+		}
+
+		return &Response[apiv0.ServerResponse]{
+			Body: *serverDetail,
+		}, nil
+	})
+
+	// Update server status endpoint (author only)
+	huma.Register(api, huma.Operation{
+		OperationID: "update-server-status",
+		Method:      http.MethodPatch,
+		Path:        "/v0/servers/{server_name}/versions/{version}/status",
+		Summary:     "Update server status",
+		Description: "Update the status of a specific server version (author only - active ↔ deprecated)",
+		Tags:        []string{"servers"},
+	}, func(_ context.Context, input *UpdateServerStatusInput) (*Response[apiv0.ServerResponse], error) {
+		// TODO: Add auth middleware to verify caller is the author of the server (or admin)
+		// TODO: Verify namespace ownership (e.g., GitHub user owns the server name)
+
+		// Update server status
+		serverDetail, err := registry.UpdateServerStatus(input.ServerName, input.Version, input.Status)
+		if err != nil {
+			if err.Error() == "record not found" || errors.Is(err, database.ErrNotFound) {
+				return nil, huma.Error404NotFound("Server version not found")
+			}
+			return nil, huma.Error500InternalServerError("Failed to update server status", err)
+		}
+
+		return &Response[apiv0.ServerResponse]{
+			Body: *serverDetail,
+		}, nil
+	})
+
+	// Edit server endpoint (admin only)
+	huma.Register(api, huma.Operation{
+		OperationID: "edit-server",
+		Method:      http.MethodPut,
+		Path:        "/v0/servers/{server_name}/versions/{version}",
+		Summary:     "Edit server data",
+		Description: "Edit server data and metadata (admin only - can edit all fields including any status transitions)",
+		Tags:        []string{"servers"},
+	}, func(_ context.Context, input *EditServerInput) (*Response[apiv0.ServerResponse], error) {
+		// TODO: Add auth middleware to verify caller is an admin
+		// TODO: Admin role verification
+
+		// Update the server data
+		serverDetail, err := registry.EditServer(input.ServerName, input.Version, input.Server)
+		if err != nil {
+			if err.Error() == "record not found" || errors.Is(err, database.ErrNotFound) {
+				return nil, huma.Error404NotFound("Server version not found")
+			}
+			return nil, huma.Error500InternalServerError("Failed to edit server", err)
+		}
+
+		// Optionally update status if provided (admin can set any status)
+		if input.Status != nil {
+			serverDetail, err = registry.UpdateServerStatus(input.ServerName, input.Version, *input.Status)
+			if err != nil {
+				return nil, huma.Error500InternalServerError("Failed to update server status", err)
+			}
 		}
 
 		return &Response[apiv0.ServerResponse]{
