@@ -31,9 +31,8 @@ type ServerListResponse struct {
 	Metadata Metadata         `json:"metadata"`
 }
 
-// ServerMeta represents the structured metadata with known extension fields
+// ServerMeta represents the structured metadata with publisher-provided extensions only
 type ServerMeta struct {
-	Official          *RegistryExtensions    `json:"io.modelcontextprotocol.registry/official,omitempty"`
 	PublisherProvided map[string]interface{} `json:"io.modelcontextprotocol.registry/publisher-provided,omitempty"`
 }
 

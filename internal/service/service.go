@@ -8,17 +8,17 @@ import (
 // RegistryService defines the interface for registry operations
 type RegistryService interface {
 	// Retrieve all servers with optional filtering
-	List(filter *database.ServerFilter, cursor string, limit int) ([]apiv0.ServerJSON, string, error)
-	// Retrieve a single server by registry metadata version ID
-	GetByVersionID(versionID string) (*apiv0.ServerJSON, error)
-	// Retrieve latest version of a server by server ID
-	GetByServerID(serverID string) (*apiv0.ServerJSON, error)
-	// Retrieve specific version of a server by server ID and version
-	GetByServerIDAndVersion(serverID string, version string) (*apiv0.ServerJSON, error)
-	// Retrieve all versions of a server by server ID
-	GetAllVersionsByServerID(serverID string) ([]apiv0.ServerJSON, error)
+	List(filter *database.ServerFilter, cursor string, limit int) ([]*apiv0.ServerResponse, string, error)
+	// Retrieve latest version of a server by server name
+	GetByServerName(serverName string) (*apiv0.ServerResponse, error)
+	// Retrieve specific version of a server by server name and version
+	GetByServerNameAndVersion(serverName string, version string) (*apiv0.ServerResponse, error)
+	// Retrieve all versions of a server by server name
+	GetAllVersionsByServerName(serverName string) ([]*apiv0.ServerResponse, error)
 	// Publish a server
-	Publish(req apiv0.ServerJSON) (*apiv0.ServerJSON, error)
-	// Update an existing server
-	EditServer(id string, req apiv0.ServerJSON) (*apiv0.ServerJSON, error)
+	Publish(req apiv0.ServerJSON) (*apiv0.ServerResponse, error)
+	// Update server status (author only - active ↔ deprecated, cannot change to/from deleted)
+	UpdateServerStatus(serverName string, version string, status string) (*apiv0.ServerResponse, error)
+	// Edit server (admin only - can edit all fields including any status transitions)
+	EditServer(serverName string, version string, req apiv0.ServerJSON) (*apiv0.ServerResponse, error)
 }

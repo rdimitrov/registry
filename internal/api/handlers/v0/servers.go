@@ -7,30 +7,50 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/registry/internal/database"
 	"github.com/modelcontextprotocol/registry/internal/service"
 	apiv0 "github.com/modelcontextprotocol/registry/pkg/api/v0"
+	"github.com/modelcontextprotocol/registry/pkg/model"
 )
 
 // ListServersInput represents the input for listing servers
 type ListServersInput struct {
-	Cursor       string `query:"cursor" doc:"Pagination cursor (UUID)" format:"uuid" required:"false" example:"550e8400-e29b-41d4-a716-446655440000"`
+	Cursor       string `query:"cursor" doc:"Pagination cursor (server name)" required:"false" example:"io.github.user/server-name"`
 	Limit        int    `query:"limit" doc:"Number of items per page" default:"30" minimum:"1" maximum:"100" example:"50"`
 	UpdatedSince string `query:"updated_since" doc:"Filter servers updated since timestamp (RFC3339 datetime)" required:"false" example:"2025-08-07T13:15:04.280Z"`
 	Search       string `query:"search" doc:"Search servers by name (substring match)" required:"false" example:"filesystem"`
 	Version      string `query:"version" doc:"Filter by version ('latest' for latest version, or an exact version like '1.2.3')" required:"false" example:"latest"`
 }
 
-// ServerDetailInput represents the input for getting server details
+// ServerDetailInput represents the input for getting latest version of a server
 type ServerDetailInput struct {
-	ServerID string `path:"server_id" doc:"Server ID (UUID)" format:"uuid"`
-	Version  string `query:"version" doc:"Specific version to retrieve (e.g., '1.0.0'). If not specified, returns latest version." required:"false" example:"1.0.0"`
+	ServerName string `path:"server_name" doc:"Server name (e.g., 'io.github.user/server-name')" example:"io.github.domdomegg/filesystem"`
 }
 
 // ServerVersionsInput represents the input for listing all versions of a server
 type ServerVersionsInput struct {
-	ServerID string `path:"server_id" doc:"Server ID (UUID)" format:"uuid"`
+	ServerName string `path:"server_name" doc:"Server name (e.g., 'io.github.user/server-name')" example:"io.github.domdomegg/filesystem"`
+}
+
+// ServerVersionDetailInput represents the input for getting a specific version
+type ServerVersionDetailInput struct {
+	ServerName string `path:"server_name" doc:"Server name (e.g., 'io.github.user/server-name')" example:"io.github.domdomegg/filesystem"`
+	Version    string `path:"version" doc:"Specific version to retrieve (e.g., '1.0.0')" example:"1.0.0"`
+}
+
+// UpdateServerStatusInput represents the input for updating server status (author only)
+type UpdateServerStatusInput struct {
+	ServerName string `path:"server_name" doc:"Server name (e.g., 'io.github.user/server-name')" example:"io.github.domdomegg/filesystem"`
+	Version    string `path:"version" doc:"Version to update (e.g., '1.0.0')" example:"1.0.0"`
+	Status     string `json:"status" doc:"New status (active or deprecated)" example:"deprecated" enum:"active,deprecated"`
+}
+
+// EditServerInput represents the input for editing server data (admin only)
+type EditServerInput struct {
+	ServerName string            `path:"server_name" doc:"Server name (e.g., 'io.github.user/server-name')" example:"io.github.domdomegg/filesystem"`
+	Version    string            `path:"version" doc:"Version to edit (e.g., '1.0.0')" example:"1.0.0"`
+	Server     apiv0.ServerJSON `json:"server" doc:"Updated server data"`
+	Status     *string           `json:"status,omitempty" doc:"Optional: update status (active, deprecated, deleted)" example:"deprecated" enum:"active,deprecated,deleted"`
 }
 
 // RegisterServersEndpoints registers all server-related endpoints
@@ -44,14 +64,6 @@ func RegisterServersEndpoints(api huma.API, registry service.RegistryService) {
 		Description: "Get a paginated list of MCP servers from the registry",
 		Tags:        []string{"servers"},
 	}, func(_ context.Context, input *ListServersInput) (*Response[apiv0.ServerListResponse], error) {
-		// Validate cursor if provided
-		if input.Cursor != "" {
-			_, err := uuid.Parse(input.Cursor)
-			if err != nil {
-				return nil, huma.Error400BadRequest("Invalid cursor parameter")
-			}
-		}
-
 		// Build filter from input parameters
 		filter := &database.ServerFilter{}
 
@@ -99,27 +111,17 @@ func RegisterServersEndpoints(api huma.API, registry service.RegistryService) {
 		}, nil
 	})
 
-	// Get server details endpoint
+	// Get server details endpoint (latest version)
 	huma.Register(api, huma.Operation{
 		OperationID: "get-server",
 		Method:      http.MethodGet,
-		Path:        "/v0/servers/{server_id}",
-		Summary:     "Get MCP server details",
-		Description: "Get detailed information about a specific MCP server. Returns the latest version by default, or a specific version if the 'version' query parameter is provided.",
+		Path:        "/v0/servers/{server_name}",
+		Summary:     "Get latest version of MCP server",
+		Description: "Get detailed information about the latest version of a specific MCP server.",
 		Tags:        []string{"servers"},
-	}, func(_ context.Context, input *ServerDetailInput) (*Response[apiv0.ServerJSON], error) {
-		// Get the server details from the registry service
-		var serverDetail *apiv0.ServerJSON
-		var err error
-
-		if input.Version != "" {
-			// Get specific version by server_id and version
-			serverDetail, err = registry.GetByServerIDAndVersion(input.ServerID, input.Version)
-		} else {
-			// Get latest version by server_id
-			serverDetail, err = registry.GetByServerID(input.ServerID)
-		}
-
+	}, func(_ context.Context, input *ServerDetailInput) (*Response[apiv0.ServerResponse], error) {
+		// Get latest version by server name
+		serverDetail, err := registry.GetByServerName(input.ServerName)
 		if err != nil {
 			if err.Error() == "record not found" || errors.Is(err, database.ErrNotFound) {
 				return nil, huma.Error404NotFound("Server not found")
@@ -127,7 +129,7 @@ func RegisterServersEndpoints(api huma.API, registry service.RegistryService) {
 			return nil, huma.Error500InternalServerError("Failed to get server details", err)
 		}
 
-		return &Response[apiv0.ServerJSON]{
+		return &Response[apiv0.ServerResponse]{
 			Body: *serverDetail,
 		}, nil
 	})
@@ -136,15 +138,15 @@ func RegisterServersEndpoints(api huma.API, registry service.RegistryService) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-server-versions",
 		Method:      http.MethodGet,
-		Path:        "/v0/servers/{server_id}/versions",
+		Path:        "/v0/servers/{server_name}/versions",
 		Summary:     "Get all versions of an MCP server",
 		Description: "Get all available versions for a specific MCP server",
 		Tags:        []string{"servers"},
 	}, func(_ context.Context, input *ServerVersionsInput) (*Response[apiv0.ServerListResponse], error) {
 		// Get all versions for this server
-		servers, err := registry.GetAllVersionsByServerID(input.ServerID)
+		servers, err := registry.GetAllVersionsByServerName(input.ServerName)
 		if err != nil {
-			if err.Error() == "record not found" {
+			if err.Error() == "record not found" || errors.Is(err, database.ErrNotFound) {
 				return nil, huma.Error404NotFound("Server not found")
 			}
 			return nil, huma.Error500InternalServerError("Failed to get server versions", err)
@@ -157,6 +159,29 @@ func RegisterServersEndpoints(api huma.API, registry service.RegistryService) {
 					Count: len(servers),
 				},
 			},
+		}, nil
+	})
+
+	// Get specific server version endpoint
+	huma.Register(api, huma.Operation{
+		OperationID: "get-server-version",
+		Method:      http.MethodGet,
+		Path:        "/v0/servers/{server_name}/versions/{version}",
+		Summary:     "Get specific version of MCP server",
+		Description: "Get detailed information about a specific version of an MCP server",
+		Tags:        []string{"servers"},
+	}, func(_ context.Context, input *ServerVersionDetailInput) (*Response[apiv0.ServerResponse], error) {
+		// Get specific version by server name and version
+		serverDetail, err := registry.GetByServerNameAndVersion(input.ServerName, input.Version)
+		if err != nil {
+			if err.Error() == "record not found" || errors.Is(err, database.ErrNotFound) {
+				return nil, huma.Error404NotFound("Server version not found")
+			}
+			return nil, huma.Error500InternalServerError("Failed to get server version", err)
+		}
+
+		return &Response[apiv0.ServerResponse]{
+			Body: *serverDetail,
 		}, nil
 	})
 }
