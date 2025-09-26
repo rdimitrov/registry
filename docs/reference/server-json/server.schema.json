@@ -23,11 +23,6 @@
           "description": "Repository hosting service identifier. Used by registries to determine validation and API access methods.",
           "example": "github"
         },
-        "id": {
-          "type": "string",
-          "description": "Repository identifier from the hosting service (e.g., GitHub repo ID). Owned and determined by the source forge. Should remain stable across repository renames and may be used to detect repository resurrection attacks - if a repository is deleted and recreated, the ID should change. For GitHub, use: gh api repos/<owner>/<repo> --jq '.id'",
-          "example": "b94b5f7e-c7c6-d760-2c78-a5e9b8a5b8c9"
-        },
         "subfolder": {
           "type": "string",
           "description": "Optional relative path from repository root to the server location within a monorepo or nested package structure. Must be a clean relative path.",
@@ -57,12 +52,6 @@
           "example": "MCP server providing weather data and forecasts via OpenWeatherMap API",
           "minLength": 1,
           "maxLength": 100
-        },
-        "status": {
-          "type": "string",
-          "enum": ["active", "deprecated", "deleted"],
-          "default": "active",
-          "description": "Server lifecycle status. 'deprecated' indicates the server is no longer recommended for new usage. 'deleted' indicates the server should never be installed and existing installations should be uninstalled - this is rare, and usually indicates malware or a legal takedown."
         },
         "repository": {
           "$ref": "#/definitions/Repository",
@@ -455,17 +444,12 @@
             },
             "_meta": {
               "type": "object",
-              "description": "Extension metadata using reverse DNS namespacing for vendor-specific data",
+              "description": "Extension metadata using reverse DNS namespacing for vendor-specific data (publisher-provided only)",
               "additionalProperties": true,
               "properties": {
                 "io.modelcontextprotocol.registry/publisher-provided": {
                   "type": "object",
                   "description": "Publisher-provided metadata for downstream registries",
-                  "additionalProperties": true
-                },
-                "io.modelcontextprotocol.registry/official": {
-                  "type": "object",
-                  "description": "Official MCP registry metadata (read-only, added by registry)",
                   "additionalProperties": true
                 }
               }
