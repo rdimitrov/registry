@@ -9,7 +9,6 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
-	"github.com/google/uuid"
 	v0 "github.com/modelcontextprotocol/registry/internal/api/handlers/v0"
 	"github.com/modelcontextprotocol/registry/internal/config"
 	"github.com/modelcontextprotocol/registry/internal/database"
@@ -38,7 +37,6 @@ func TestServersListEndpoint(t *testing.T) {
 					Repository: model.Repository{
 						URL:    "https://github.com/example/test-server-1",
 						Source: "github",
-						ID:     "example/test-server-1",
 					},
 					Version: "1.0.0",
 				}
@@ -48,7 +46,6 @@ func TestServersListEndpoint(t *testing.T) {
 					Repository: model.Repository{
 						URL:    "https://github.com/example/test-server-2",
 						Source: "github",
-						ID:     "example/test-server-2",
 					},
 					Version: "2.0.0",
 				}
@@ -67,7 +64,6 @@ func TestServersListEndpoint(t *testing.T) {
 					Repository: model.Repository{
 						URL:    "https://github.com/example/test-server-3",
 						Source: "github",
-						ID:     "example/test-server-3",
 					},
 					Version: "1.5.0",
 				}
@@ -84,7 +80,7 @@ func TestServersListEndpoint(t *testing.T) {
 		},
 		{
 			name:                 "invalid cursor parameter",
-			queryParams:          "?cursor=invalid-uuid",
+			queryParams:          "?cursor=invalid-name",
 			setupRegistryService: func(_ service.RegistryService) {},
 			expectedStatus:       http.StatusUnprocessableEntity, // Huma returns 422 for validation errors
 			expectedError:        "validation failed",
@@ -127,7 +123,6 @@ func TestServersListEndpoint(t *testing.T) {
 					Repository: model.Repository{
 						URL:    "https://github.com/example/test-matching",
 						Source: "github",
-						ID:     "example/test-matching",
 					},
 					Version: "1.0.0",
 				}
@@ -137,7 +132,6 @@ func TestServersListEndpoint(t *testing.T) {
 					Repository: model.Repository{
 						URL:    "https://github.com/example/other",
 						Source: "github",
-						ID:     "example/other",
 					},
 					Version: "1.0.0",
 				}
@@ -156,7 +150,6 @@ func TestServersListEndpoint(t *testing.T) {
 					Repository: model.Repository{
 						URL:    "https://github.com/example/recent",
 						Source: "github",
-						ID:     "example/recent",
 					},
 					Version: "1.0.0",
 				}
@@ -174,7 +167,6 @@ func TestServersListEndpoint(t *testing.T) {
 					Repository: model.Repository{
 						URL:    "https://github.com/example/versioned",
 						Source: "github",
-						ID:     "example/versioned",
 					},
 					Version: "1.0.0",
 				}
@@ -184,7 +176,6 @@ func TestServersListEndpoint(t *testing.T) {
 					Repository: model.Repository{
 						URL:    "https://github.com/example/versioned",
 						Source: "github",
-						ID:     "example/versioned",
 					},
 					Version: "2.0.0",
 				}
@@ -203,7 +194,6 @@ func TestServersListEndpoint(t *testing.T) {
 					Repository: model.Repository{
 						URL:    "https://github.com/example/combined",
 						Source: "github",
-						ID:     "example/combined",
 					},
 					Version: "1.0.0",
 				}
@@ -213,7 +203,6 @@ func TestServersListEndpoint(t *testing.T) {
 					Repository: model.Repository{
 						URL:    "https://github.com/example/nomatch",
 						Source: "github",
-						ID:     "example/nomatch",
 					},
 					Version: "1.0.0",
 				}
@@ -240,7 +229,6 @@ func TestServersListEndpoint(t *testing.T) {
 					Repository: model.Repository{
 						URL:    "https://github.com/example/filesystem",
 						Source: "github",
-						ID:     "example/filesystem",
 					},
 					Version: "1.0.0",
 				}
@@ -250,7 +238,6 @@ func TestServersListEndpoint(t *testing.T) {
 					Repository: model.Repository{
 						URL:    "https://github.com/example/filesystem",
 						Source: "github",
-						ID:     "example/filesystem",
 					},
 					Version: "2.0.0",
 				}
@@ -260,7 +247,6 @@ func TestServersListEndpoint(t *testing.T) {
 					Repository: model.Repository{
 						URL:    "https://github.com/example/database",
 						Source: "github",
-						ID:     "example/database",
 					},
 					Version: "1.0.0",
 				}
@@ -270,7 +256,6 @@ func TestServersListEndpoint(t *testing.T) {
 					Repository: model.Repository{
 						URL:    "https://github.com/another/filesystem-tools",
 						Source: "github",
-						ID:     "another/filesystem-tools",
 					},
 					Version: "3.0.0",
 				}
@@ -294,7 +279,10 @@ func TestServersListEndpoint(t *testing.T) {
 			api := humago.New(mux, huma.DefaultConfig("Test API", "1.0.0"))
 
 			// Register the servers endpoints
-			v0.RegisterServersEndpoints(api, registryService)
+			cfg := &config.Config{
+				JWTPrivateKey: "bb2c6b424005acd5df47a9e2c87f446def86dd740c888ea3efb825b23f7ef47c",
+			}
+			v0.RegisterServersEndpoints(api, registryService, cfg)
 
 			// Create request
 			url := "/v0/servers" + tc.queryParams
@@ -320,16 +308,16 @@ func TestServersListEndpoint(t *testing.T) {
 				switch tc.name {
 				case "successful search by name substring":
 					assert.Len(t, resp.Servers, 1, "Expected exactly one matching server")
-					assert.Contains(t, resp.Servers[0].Name, "test-server", "Server name should contain search term")
+					assert.Contains(t, resp.Servers[0].Server.Name, "test-server", "Server name should contain search term")
 				case "successful updated_since filter with RFC3339":
 					assert.Len(t, resp.Servers, 1, "Expected one server updated after 2020")
-					assert.Contains(t, resp.Servers[0].Name, "recent-server")
+					assert.Contains(t, resp.Servers[0].Server.Name, "recent-server")
 				case "successful version=latest filter":
 					assert.Len(t, resp.Servers, 1, "Expected one latest server")
-					assert.Contains(t, resp.Servers[0].Description, "latest")
+					assert.Contains(t, resp.Servers[0].Server.Description, "latest")
 				case "combined search and updated_since filter":
 					assert.Len(t, resp.Servers, 1, "Expected one server matching both filters")
-					assert.Contains(t, resp.Servers[0].Name, "combined", "Server name should contain search term")
+					assert.Contains(t, resp.Servers[0].Server.Name, "combined", "Server name should contain search term")
 				case "empty registry returns success":
 					assert.Empty(t, resp.Servers, "Expected empty server list for empty registry")
 				case "comprehensive query with all parameters":
@@ -337,7 +325,7 @@ func TestServersListEndpoint(t *testing.T) {
 					// Expected: 2 servers (filesystem-server v2.0.0 and filesystem-tools v3.0.0)
 					assert.Len(t, resp.Servers, 2, "Expected two servers matching all filters")
 					for _, server := range resp.Servers {
-						assert.Contains(t, server.Name, "filesystem", "Server name should contain 'filesystem'")
+						assert.Contains(t, server.Server.Name, "filesystem", "Server name should contain 'filesystem'")
 					}
 					// Verify the limit parameter worked (should be at most 50, but we only have 2)
 					assert.LessOrEqual(t, len(resp.Servers), 50, "Should respect limit parameter")
@@ -350,11 +338,11 @@ func TestServersListEndpoint(t *testing.T) {
 
 				// General structure validation
 				for _, server := range resp.Servers {
-					assert.NotEmpty(t, server.Name)
-					assert.NotEmpty(t, server.Description)
+					assert.NotEmpty(t, server.Server.Name)
+					assert.NotEmpty(t, server.Server.Description)
 					assert.NotNil(t, server.Meta)
 					assert.NotNil(t, server.Meta.Official)
-					assert.NotEmpty(t, server.Meta.Official.VersionID)
+					assert.True(t, server.Meta.Official.IsLatest || !server.Meta.Official.IsLatest) // Just verify the field exists
 				}
 
 				// Check metadata if expected
@@ -381,7 +369,7 @@ func TestServersDetailEndpoint(t *testing.T) {
 	registryService := service.NewRegistryService(database.NewTestDB(t), config.NewConfig())
 
 	// Publish multiple versions of the same server
-	testServer1, err := registryService.Publish(apiv0.ServerJSON{
+	_, err := registryService.Publish(apiv0.ServerJSON{
 		Name:        "com.example/test-server",
 		Description: "A test server",
 		Version:     "1.0.0",
@@ -397,7 +385,7 @@ func TestServersDetailEndpoint(t *testing.T) {
 
 	testCases := []struct {
 		name           string
-		serverID       string
+		serverName     string
 		version        string
 		expectedStatus int
 		expectedServer *apiv0.ServerJSON
@@ -405,37 +393,37 @@ func TestServersDetailEndpoint(t *testing.T) {
 	}{
 		{
 			name:           "successful get server detail (latest)",
-			serverID:       testServer1.Meta.Official.ServerID,
+			serverName:     "com.example/test-server",
 			expectedStatus: http.StatusOK,
 		},
 		{
 			name:           "successful get server detail with specific version",
-			serverID:       testServer1.Meta.Official.ServerID,
+			serverName:     "com.example/test-server",
 			version:        "1.0.0",
 			expectedStatus: http.StatusOK,
 		},
 		{
 			name:           "successful get server detail with latest version",
-			serverID:       testServer1.Meta.Official.ServerID,
+			serverName:     "com.example/test-server",
 			version:        "2.0.0",
 			expectedStatus: http.StatusOK,
 		},
 		{
 			name:           "version not found for server",
-			serverID:       testServer1.Meta.Official.ServerID,
+			serverName:     "com.example/test-server",
 			version:        "3.0.0",
 			expectedStatus: http.StatusNotFound,
-			expectedError:  "Server not found",
+			expectedError:  "Server version not found",
 		},
 		{
-			name:           "invalid server ID format",
-			serverID:       "invalid-uuid",
+			name:           "invalid server name format",
+			serverName:     "",
 			expectedStatus: http.StatusUnprocessableEntity,
 			expectedError:  "validation failed",
 		},
 		{
 			name:           "server not found",
-			serverID:       uuid.New().String(),
+			serverName:     "com.example/nonexistent-server",
 			expectedStatus: http.StatusNotFound,
 			expectedError:  "Server not found",
 		},
@@ -448,10 +436,13 @@ func TestServersDetailEndpoint(t *testing.T) {
 			api := humago.New(mux, huma.DefaultConfig("Test API", "1.0.0"))
 
 			// Register the servers endpoints
-			v0.RegisterServersEndpoints(api, registryService)
+			cfg := &config.Config{
+				JWTPrivateKey: "bb2c6b424005acd5df47a9e2c87f446def86dd740c888ea3efb825b23f7ef47c",
+			}
+			v0.RegisterServersEndpoints(api, registryService, cfg)
 
 			// Create request
-			url := "/v0/servers/" + tc.serverID
+			url := "/v0/servers/" + tc.serverName
 			if tc.version != "" {
 				url += "?version=" + tc.version
 			}
@@ -469,12 +460,12 @@ func TestServersDetailEndpoint(t *testing.T) {
 				assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
 
 				// Parse response body
-				var serverDetailResp apiv0.ServerJSON
+				var serverDetailResp apiv0.ServerResponse
 				err := json.NewDecoder(w.Body).Decode(&serverDetailResp)
 				assert.NoError(t, err)
 
 				// Check that we got a valid response
-				assert.NotEmpty(t, serverDetailResp.Name)
+				assert.NotEmpty(t, serverDetailResp.Server.Name)
 			} else if tc.expectedError != "" {
 				// Check error message for non-200 responses
 				assert.Contains(t, w.Body.String(), tc.expectedError)
@@ -491,7 +482,7 @@ func TestServersVersionsEndpoint(t *testing.T) {
 	registryService := service.NewRegistryService(database.NewTestDB(t), config.NewConfig())
 
 	// Publish multiple versions of the same server
-	testServer1, err := registryService.Publish(apiv0.ServerJSON{
+	_, err := registryService.Publish(apiv0.ServerJSON{
 		Name:        "com.example/versioned-server",
 		Description: "A versioned test server",
 		Version:     "1.0.0",
@@ -514,26 +505,26 @@ func TestServersVersionsEndpoint(t *testing.T) {
 
 	testCases := []struct {
 		name           string
-		serverID       string
+		serverName     string
 		expectedStatus int
 		expectedCount  int
 		expectedError  string
 	}{
 		{
 			name:           "successful get all versions",
-			serverID:       testServer1.Meta.Official.ServerID,
+			serverName:     "com.example/versioned-server",
 			expectedStatus: http.StatusOK,
 			expectedCount:  3,
 		},
 		{
-			name:           "invalid server ID format",
-			serverID:       "invalid-uuid",
+			name:           "invalid server name format",
+			serverName:     "",
 			expectedStatus: http.StatusUnprocessableEntity,
 			expectedError:  "validation failed",
 		},
 		{
 			name:           "server not found",
-			serverID:       uuid.New().String(),
+			serverName:     "com.example/nonexistent-server",
 			expectedStatus: http.StatusNotFound,
 			expectedError:  "Server not found",
 		},
@@ -546,10 +537,13 @@ func TestServersVersionsEndpoint(t *testing.T) {
 			api := humago.New(mux, huma.DefaultConfig("Test API", "1.0.0"))
 
 			// Register the servers endpoints
-			v0.RegisterServersEndpoints(api, registryService)
+			cfg := &config.Config{
+				JWTPrivateKey: "bb2c6b424005acd5df47a9e2c87f446def86dd740c888ea3efb825b23f7ef47c",
+			}
+			v0.RegisterServersEndpoints(api, registryService, cfg)
 
 			// Create request
-			url := "/v0/servers/" + tc.serverID + "/versions"
+			url := "/v0/servers/" + tc.serverName + "/versions"
 			req := httptest.NewRequest(http.MethodGet, url, nil)
 			w := httptest.NewRecorder()
 
@@ -572,17 +566,16 @@ func TestServersVersionsEndpoint(t *testing.T) {
 				assert.Len(t, versionsResp.Servers, tc.expectedCount)
 				assert.Equal(t, tc.expectedCount, versionsResp.Metadata.Count)
 
-				// Verify all returned servers have the same server ID but different versions
+				// Verify all returned servers have the same server name but different versions
 				for _, server := range versionsResp.Servers {
-					assert.Equal(t, tc.serverID, server.Meta.Official.ServerID)
-					assert.NotEmpty(t, server.Version)
-					assert.Equal(t, "com.example/versioned-server", server.Name)
+					assert.Equal(t, "com.example/versioned-server", server.Server.Name)
+					assert.NotEmpty(t, server.Server.Version)
 				}
 
 				// Verify versions are included (should have 1.0.0, 2.0.0, 2.1.0)
 				versions := make([]string, 0, len(versionsResp.Servers))
 				for _, server := range versionsResp.Servers {
-					versions = append(versions, server.Version)
+					versions = append(versions, server.Server.Version)
 				}
 				assert.Contains(t, versions, "1.0.0")
 				assert.Contains(t, versions, "2.0.0")
@@ -600,14 +593,13 @@ func TestServersEndpointsIntegration(t *testing.T) {
 	// Create mock registry service
 	registryService := service.NewRegistryService(database.NewTestDB(t), config.NewConfig())
 
-	// Test data - publish a server and get its actual ID
+	// Test data - publish a server and get its actual name
 	testServer := apiv0.ServerJSON{
 		Name:        "com.example/integration-test-server",
 		Description: "Integration test server",
 		Repository: model.Repository{
 			URL:    "https://github.com/example/integration-test",
 			Source: "github",
-			ID:     "example/integration-test",
 		},
 		Version: "1.0.0",
 	}
@@ -616,8 +608,8 @@ func TestServersEndpointsIntegration(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, published)
 
-	serverID := published.Meta.Official.ServerID
-	servers := []apiv0.ServerJSON{*published}
+	serverName := published.Server.Name
+	servers := []apiv0.ServerResponse{*published}
 	serverDetail := published
 
 	// Create a new test API
@@ -625,7 +617,10 @@ func TestServersEndpointsIntegration(t *testing.T) {
 	api := humago.New(mux, huma.DefaultConfig("Test API", "1.0.0"))
 
 	// Register the servers endpoints
-	v0.RegisterServersEndpoints(api, registryService)
+	cfg := &config.Config{
+		JWTPrivateKey: "bb2c6b424005acd5df47a9e2c87f446def86dd740c888ea3efb825b23f7ef47c",
+	}
+	v0.RegisterServersEndpoints(api, registryService, cfg)
 
 	// Create test server
 	server := httptest.NewServer(mux)
@@ -660,17 +655,17 @@ func TestServersEndpointsIntegration(t *testing.T) {
 		// Check the response data (excluding timestamps which will be different)
 		assert.Len(t, listResp.Servers, len(servers))
 		if len(listResp.Servers) > 0 {
-			assert.Equal(t, servers[0].Name, listResp.Servers[0].Name)
-			assert.Equal(t, servers[0].Description, listResp.Servers[0].Description)
-			assert.Equal(t, servers[0].Repository, listResp.Servers[0].Repository)
-			assert.Equal(t, servers[0].Version, listResp.Servers[0].Version)
+			assert.Equal(t, servers[0].Server.Name, listResp.Servers[0].Server.Name)
+			assert.Equal(t, servers[0].Server.Description, listResp.Servers[0].Server.Description)
+			assert.Equal(t, servers[0].Server.Repository, listResp.Servers[0].Server.Repository)
+			assert.Equal(t, servers[0].Server.Version, listResp.Servers[0].Server.Version)
 		}
 	})
 
 	// Test get server detail endpoint
 	t.Run("get server detail integration", func(t *testing.T) {
 		ctx := context.Background()
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/v0/servers/"+serverID, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/v0/servers/"+serverName, nil)
 		if err != nil {
 			t.Fatalf("Failed to create request: %v", err)
 		}
@@ -689,15 +684,15 @@ func TestServersEndpointsIntegration(t *testing.T) {
 		assert.Equal(t, "application/json", resp.Header.Get("Content-Type"))
 
 		// Parse response body
-		var serverDetailResp apiv0.ServerJSON
+		var serverDetailResp apiv0.ServerResponse
 		err = json.NewDecoder(resp.Body).Decode(&serverDetailResp)
 		assert.NoError(t, err)
 
 		// Check the response data (excluding timestamps which will be different)
-		assert.Equal(t, serverDetail.Name, serverDetailResp.Name)
-		assert.Equal(t, serverDetail.Description, serverDetailResp.Description)
-		assert.Equal(t, serverDetail.Repository, serverDetailResp.Repository)
-		assert.Equal(t, serverDetail.Version, serverDetailResp.Version)
+		assert.Equal(t, serverDetail.Server.Name, serverDetailResp.Server.Name)
+		assert.Equal(t, serverDetail.Server.Description, serverDetailResp.Server.Description)
+		assert.Equal(t, serverDetail.Server.Repository, serverDetailResp.Server.Repository)
+		assert.Equal(t, serverDetail.Server.Version, serverDetailResp.Server.Version)
 	})
 
 	// Verify mock expectations

@@ -7,10 +7,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
-	"time"
 
+	"github.com/modelcontextprotocol/registry/internal/config"
 	"github.com/modelcontextprotocol/registry/internal/database"
 	"github.com/modelcontextprotocol/registry/internal/importer"
+	"github.com/modelcontextprotocol/registry/internal/service"
 	apiv0 "github.com/modelcontextprotocol/registry/pkg/api/v0"
 	"github.com/modelcontextprotocol/registry/pkg/model"
 	"github.com/stretchr/testify/assert"
@@ -30,15 +31,6 @@ func TestImportService_LocalFile(t *testing.T) {
 				ID:     "123",
 			},
 			Version: "1.0.0",
-			Meta: &apiv0.ServerMeta{
-				Official: &apiv0.RegistryExtensions{
-					ServerID:    "server-id-1",
-					VersionID:   "test-id-1",
-					PublishedAt: time.Now(),
-					UpdatedAt:   time.Now(),
-					IsLatest:    true,
-				},
-			},
 		},
 	}
 
@@ -50,17 +42,19 @@ func TestImportService_LocalFile(t *testing.T) {
 	defer os.Remove(tempFile)
 
 	testDB := database.NewTestDB(t)
+	cfg := config.NewConfig()
+	registryService := service.NewRegistryService(testDB, cfg)
 
 	// Create importer service and test import
-	service := importer.NewService(testDB)
-	err = service.ImportFromPath(context.Background(), tempFile)
+	importerService := importer.NewService(registryService)
+	err = importerService.ImportFromPath(context.Background(), tempFile)
 	require.NoError(t, err)
 
 	// Verify the server was imported
 	servers, _, err := testDB.List(context.Background(), nil, nil, "", 10)
 	require.NoError(t, err)
 	assert.Len(t, servers, 1)
-	assert.Equal(t, "io.github.test/test-server-1", servers[0].Name)
+	assert.Equal(t, "io.github.test/test-server-1", servers[0].Server.Name)
 }
 
 func TestImportService_HTTPFile(t *testing.T) {
@@ -75,15 +69,6 @@ func TestImportService_HTTPFile(t *testing.T) {
 				ID:     "123",
 			},
 			Version: "2.0.0",
-			Meta: &apiv0.ServerMeta{
-				Official: &apiv0.RegistryExtensions{
-					ServerID:    "server-id-test",
-					VersionID:   "test-id-2",
-					PublishedAt: time.Now(),
-					UpdatedAt:   time.Now(),
-					IsLatest:    true,
-				},
-			},
 		},
 	}
 
@@ -94,17 +79,19 @@ func TestImportService_HTTPFile(t *testing.T) {
 	defer server.Close()
 
 	testDB := database.NewTestDB(t)
+	cfg := config.NewConfig()
+	registryService := service.NewRegistryService(testDB, cfg)
 
 	// Create importer service and test import
-	service := importer.NewService(testDB)
-	err := service.ImportFromPath(context.Background(), server.URL+"/seed.json")
+	importerService := importer.NewService(registryService)
+	err := importerService.ImportFromPath(context.Background(), server.URL+"/seed.json")
 	require.NoError(t, err)
 
 	// Verify the server was imported
 	servers, _, err := testDB.List(context.Background(), nil, nil, "", 10)
 	require.NoError(t, err)
 	assert.Len(t, servers, 1)
-	assert.Equal(t, "io.github.test/http-test-server", servers[0].Name)
+	assert.Equal(t, "io.github.test/http-test-server", servers[0].Server.Name)
 }
 
 func TestImportService_RegistryAPI(t *testing.T) {
@@ -119,15 +106,6 @@ func TestImportService_RegistryAPI(t *testing.T) {
 				ID:     "123",
 			},
 			Version: "1.0.0",
-			Meta: &apiv0.ServerMeta{
-				Official: &apiv0.RegistryExtensions{
-					ServerID:    "server-id-test-1",
-					VersionID:   "api-test-id-1",
-					PublishedAt: time.Now(),
-					UpdatedAt:   time.Now(),
-					IsLatest:    true,
-				},
-			},
 		},
 		{
 			Name:        "io.github.test/api-server-2",
@@ -138,15 +116,6 @@ func TestImportService_RegistryAPI(t *testing.T) {
 				ID:     "456",
 			},
 			Version: "2.0.0",
-			Meta: &apiv0.ServerMeta{
-				Official: &apiv0.RegistryExtensions{
-					ServerID:    "server-id-test-2",
-					VersionID:   "api-test-id-2",
-					PublishedAt: time.Now(),
-					UpdatedAt:   time.Now(),
-					IsLatest:    true,
-				},
-			},
 		},
 	}
 
@@ -180,10 +149,12 @@ func TestImportService_RegistryAPI(t *testing.T) {
 	defer server.Close()
 
 	testDB := database.NewTestDB(t)
+	cfg := config.NewConfig()
+	registryService := service.NewRegistryService(testDB, cfg)
 
 	// Create importer service and test import
-	service := importer.NewService(testDB)
-	err := service.ImportFromPath(context.Background(), server.URL+"/v0/servers")
+	importerService := importer.NewService(registryService)
+	err := importerService.ImportFromPath(context.Background(), server.URL+"/v0/servers")
 	require.NoError(t, err)
 
 	// Verify both servers were imported
@@ -191,7 +162,7 @@ func TestImportService_RegistryAPI(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, servers, 2)
 
-	names := []string{servers[0].Name, servers[1].Name}
+	names := []string{servers[0].Server.Name, servers[1].Server.Name}
 	assert.Contains(t, names, "io.github.test/api-server-1")
 	assert.Contains(t, names, "io.github.test/api-server-2")
 }

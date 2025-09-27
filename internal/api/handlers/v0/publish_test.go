@@ -35,6 +35,57 @@ func generateTestJWTToken(cfg *config.Config, claims auth.JWTClaims) (string, er
 	return tokenResponse.RegistryToken, nil
 }
 
+// validateServerResponse validates that the response has the correct ServerResponse structure
+// and that the nested server data matches expectations
+func validateServerResponse(t *testing.T, body string, expectedServerData apiv0.ServerJSON) {
+	t.Helper()
+	var response apiv0.ServerResponse
+	err := json.Unmarshal([]byte(body), &response)
+	require.NoError(t, err, "should be able to unmarshal ServerResponse")
+
+	// Validate that we have the expected structure
+	assert.NotNil(t, response.Server, "response should have server field")
+	assert.NotNil(t, response.Meta, "response should have _meta field")
+
+	// Validate server data matches expected input (publisher-provided fields only)
+	assert.Equal(t, expectedServerData.Name, response.Server.Name, "server name should match")
+	assert.Equal(t, expectedServerData.Description, response.Server.Description, "server description should match")
+	assert.Equal(t, expectedServerData.Version, response.Server.Version, "server version should match")
+
+	// Validate repository data if provided
+	if expectedServerData.Repository.URL != "" {
+		assert.Equal(t, expectedServerData.Repository.URL, response.Server.Repository.URL, "repository URL should match")
+		assert.Equal(t, expectedServerData.Repository.Source, response.Server.Repository.Source, "repository source should match")
+		// Note: Repository.ID should NOT be present in the response as it's been eliminated
+		assert.Empty(t, response.Server.Repository.ID, "repository ID should not be present in immutable server.json")
+	}
+
+	// Validate packages if provided
+	if len(expectedServerData.Packages) > 0 {
+		assert.Len(t, response.Server.Packages, len(expectedServerData.Packages), "packages length should match")
+		for i, expectedPkg := range expectedServerData.Packages {
+			assert.Equal(t, expectedPkg.RegistryType, response.Server.Packages[i].RegistryType, "package registry type should match")
+			assert.Equal(t, expectedPkg.Identifier, response.Server.Packages[i].Identifier, "package identifier should match")
+			assert.Equal(t, expectedPkg.Version, response.Server.Packages[i].Version, "package version should match")
+		}
+	}
+
+	// Validate remotes if provided
+	if len(expectedServerData.Remotes) > 0 {
+		assert.Len(t, response.Server.Remotes, len(expectedServerData.Remotes), "remotes length should match")
+		for i, expectedRemote := range expectedServerData.Remotes {
+			assert.Equal(t, expectedRemote.Type, response.Server.Remotes[i].Type, "remote transport type should match")
+			assert.Equal(t, expectedRemote.URL, response.Server.Remotes[i].URL, "remote URL should match")
+		}
+	}
+
+	// Validate registry-managed metadata is present and valid
+	assert.NotNil(t, response.Meta.Official, "response should have official metadata")
+	assert.NotEmpty(t, response.Meta.Official.Status, "status should be set by registry")
+	assert.False(t, response.Meta.Official.PublishedAt.IsZero(), "publishedAt should be set by registry")
+	assert.True(t, response.Meta.Official.IsLatest, "isLatest should be true for new publications")
+}
+
 func TestPublishEndpoint(t *testing.T) {
 	testSeed := make([]byte, ed25519.SeedSize)
 	_, err := rand.Read(testSeed)
@@ -45,13 +96,14 @@ func TestPublishEndpoint(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name                 string
-		requestBody          interface{}
-		tokenClaims          *auth.JWTClaims
-		authHeader           string
-		setupRegistryService func(service.RegistryService)
-		expectedStatus       int
-		expectedError        string
+		name                    string
+		requestBody             interface{}
+		tokenClaims             *auth.JWTClaims
+		authHeader              string
+		setupRegistryService    func(service.RegistryService)
+		expectedStatus          int
+		expectedError           string
+		validateResponse        func(t *testing.T, body string, requestData apiv0.ServerJSON)
 	}{
 		{
 			name: "successful publish with GitHub auth",
@@ -61,7 +113,6 @@ func TestPublishEndpoint(t *testing.T) {
 				Repository: model.Repository{
 					URL:    "https://github.com/example/test-server",
 					Source: "github",
-					ID:     "example/test-server",
 				},
 				Version: "1.0.0",
 			},
@@ -76,6 +127,7 @@ func TestPublishEndpoint(t *testing.T) {
 				// Empty registry - no setup needed
 			},
 			expectedStatus: http.StatusOK,
+			validateResponse: validateServerResponse,
 		},
 		{
 			name: "successful publish with no auth (AuthMethodNone)",
@@ -85,7 +137,6 @@ func TestPublishEndpoint(t *testing.T) {
 				Repository: model.Repository{
 					URL:    "https://github.com/example/test-server",
 					Source: "github",
-					ID:     "example/test-server",
 				},
 				Version: "1.0.0",
 			},
@@ -99,6 +150,7 @@ func TestPublishEndpoint(t *testing.T) {
 				// Empty registry - no setup needed
 			},
 			expectedStatus: http.StatusOK,
+			validateResponse: validateServerResponse,
 		},
 		{
 			name:        "missing authorization header",
@@ -147,7 +199,6 @@ func TestPublishEndpoint(t *testing.T) {
 				Repository: model.Repository{
 					URL:    "https://github.com/example/test-server",
 					Source: "github",
-					ID:     "example/test-server",
 				},
 			},
 			tokenClaims: &auth.JWTClaims{
@@ -171,7 +222,6 @@ func TestPublishEndpoint(t *testing.T) {
 				Repository: model.Repository{
 					URL:    "https://github.com/example/test-server",
 					Source: "github",
-					ID:     "example/test-server",
 				},
 			},
 			tokenClaims: &auth.JWTClaims{
@@ -189,7 +239,6 @@ func TestPublishEndpoint(t *testing.T) {
 					Repository: model.Repository{
 						URL:    "https://github.com/example/test-server-existing",
 						Source: "github",
-						ID:     "example/test-server-existing",
 					},
 				}
 				_, _ = registry.Publish(existingServer)
@@ -223,6 +272,7 @@ func TestPublishEndpoint(t *testing.T) {
 			},
 			setupRegistryService: func(_ service.RegistryService) {},
 			expectedStatus:       http.StatusOK,
+			validateResponse:     validateServerResponse,
 		},
 		{
 			name: "invalid server name - multiple slashes (two slashes)",
@@ -233,7 +283,6 @@ func TestPublishEndpoint(t *testing.T) {
 				Repository: model.Repository{
 					URL:    "https://github.com/example/test-server",
 					Source: "github",
-					ID:     "example/test-server",
 				},
 			},
 			tokenClaims: &auth.JWTClaims{
@@ -323,7 +372,6 @@ func TestPublishEndpoint(t *testing.T) {
 				Repository: model.Repository{
 					URL:    "https://github.com/example/test-server",
 					Source: "github",
-					ID:     "example/test-server",
 				},
 				Packages: []model.Package{
 					{
@@ -401,6 +449,13 @@ func TestPublishEndpoint(t *testing.T) {
 
 			if tc.expectedError != "" {
 				assert.Contains(t, rr.Body.String(), tc.expectedError)
+			}
+
+			// Validate response structure for successful requests
+			if tc.validateResponse != nil && tc.expectedStatus == http.StatusOK {
+				if requestBodyData, ok := tc.requestBody.(apiv0.ServerJSON); ok {
+					tc.validateResponse(t, rr.Body.String(), requestBodyData)
+				}
 			}
 
 			// No mock expectations to verify
@@ -499,12 +554,16 @@ func TestPublishEndpoint_MultipleSlashesEdgeCases(t *testing.T) {
 			mux.ServeHTTP(rr, req)
 
 			// Assertions
-			assert.Equal(t, tc.expectedStatus, rr.Code, 
+			assert.Equal(t, tc.expectedStatus, rr.Code,
 				"%s: expected status %d, got %d", tc.description, tc.expectedStatus, rr.Code)
 
-			if tc.expectedStatus == http.StatusBadRequest {
+			switch tc.expectedStatus {
+			case http.StatusBadRequest:
 				assert.Contains(t, rr.Body.String(), "server name cannot contain multiple slashes",
 					"%s: should contain specific error message", tc.description)
+			case http.StatusOK:
+				// Validate successful ServerResponse structure
+				validateServerResponse(t, rr.Body.String(), requestBody)
 			}
 		})
 	}

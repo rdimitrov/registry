@@ -10,19 +10,19 @@ import (
 	"os"
 	"strings"
 
-	"github.com/modelcontextprotocol/registry/internal/database"
+	"github.com/modelcontextprotocol/registry/internal/service"
 	"github.com/modelcontextprotocol/registry/internal/validators"
 	apiv0 "github.com/modelcontextprotocol/registry/pkg/api/v0"
 )
 
 // Service handles importing seed data into the registry
 type Service struct {
-	db database.Database
+	registry service.RegistryService
 }
 
 // NewService creates a new importer service
-func NewService(db database.Database) *Service {
-	return &Service{db: db}
+func NewService(registry service.RegistryService) *Service {
+	return &Service{registry: registry}
 }
 
 // ImportFromPath imports seed data from various sources:
@@ -35,9 +35,9 @@ func (s *Service) ImportFromPath(ctx context.Context, path string) error {
 		return fmt.Errorf("failed to read seed data: %w", err)
 	}
 
-	// Import each server using CreateServer
+	// Import each server using the registry service's Publish method
 	for _, server := range servers {
-		_, err := s.db.CreateServer(ctx, nil, server)
+		_, err := s.registry.Publish(*server)
 		if err != nil {
 			return fmt.Errorf("failed to import server %s: %w", server.Name, err)
 		}

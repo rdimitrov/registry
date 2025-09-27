@@ -382,12 +382,10 @@ func validatePublisherExtensions(req apiv0.ServerJSON) error {
 		}
 	}
 
-	if req.Meta != nil {
-		// Validate that only publisher-provided data is allowed in _meta during publish (no official registry metadata should be present)
-		if req.Meta.Official != nil {
-			return fmt.Errorf("official registry metadata '_meta.io.modelcontextprotocol.registry/official' is not allowed during publish")
-		}
-	}
+	// Note: With the new immutable server.json architecture, req.Meta can only contain
+	// PublisherProvided data. There is no Official field in ServerMeta that publishers
+	// can access - that's only available in ResponseMeta returned by the registry.
+	// Therefore, no validation is needed here for official metadata.
 
 	return nil
 }

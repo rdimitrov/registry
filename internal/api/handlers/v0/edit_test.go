@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -21,6 +22,7 @@ import (
 )
 
 func TestEditServerEndpoint(t *testing.T) {
+	// Test if removing URL escaping fixes path parameter parsing
 	// Create registry service and insert a common test server
 	registryService := service.NewRegistryService(database.NewTestDB(t), config.NewConfig())
 
@@ -28,7 +30,6 @@ func TestEditServerEndpoint(t *testing.T) {
 	testServer := apiv0.ServerJSON{
 		Name:        "io.github.domdomegg/test-server",
 		Description: "Original test server",
-		Status:      model.StatusActive,
 		Repository: model.Repository{
 			URL:    "https://github.com/domdomegg/test-server",
 			Source: "github",
@@ -42,13 +43,12 @@ func TestEditServerEndpoint(t *testing.T) {
 	assert.NotNil(t, published.Meta)
 	assert.NotNil(t, published.Meta.Official)
 
-	testServerID := published.Meta.Official.ServerID
+	testServerName := published.Server.Name
 
 	// Publish a second server for permission testing
 	otherServer := apiv0.ServerJSON{
 		Name:        "io.github.other/test-server",
 		Description: "Other test server",
-		Status:      model.StatusActive,
 		Repository: model.Repository{
 			URL:    "https://github.com/other/test-server",
 			Source: "github",
@@ -62,13 +62,12 @@ func TestEditServerEndpoint(t *testing.T) {
 	assert.NotNil(t, otherPublished.Meta)
 	assert.NotNil(t, otherPublished.Meta.Official)
 
-	otherServerID := otherPublished.Meta.Official.ServerID
+	otherServerName := otherPublished.Server.Name
 
 	// Publish a deleted server for undelete testing
 	deletedServer := apiv0.ServerJSON{
 		Name:        "io.github.domdomegg/deleted-server",
 		Description: "Deleted test server",
-		Status:      model.StatusDeleted,
 		Repository: model.Repository{
 			URL:    "https://github.com/domdomegg/deleted-server",
 			Source: "github",
@@ -82,13 +81,13 @@ func TestEditServerEndpoint(t *testing.T) {
 	assert.NotNil(t, deletedPublished.Meta)
 	assert.NotNil(t, deletedPublished.Meta.Official)
 
-	deletedServerID := deletedPublished.Meta.Official.ServerID
+	deletedServerName := deletedPublished.Server.Name
 
 	testCases := []struct {
 		name           string
 		authHeader     string
 		requestBody    interface{}
-		serverID       string
+		serverName     string
 		version        string
 		expectedStatus int
 		expectedError  string
@@ -106,18 +105,20 @@ func TestEditServerEndpoint(t *testing.T) {
 				})
 				return "Bearer " + token
 			}(),
-			requestBody: apiv0.ServerJSON{
-				Name:        "io.github.domdomegg/test-server",
-				Description: "Updated test server",
-				Status:      model.StatusDeprecated,
-				Repository: model.Repository{
-					URL:    "https://github.com/domdomegg/test-server",
-					Source: "github",
-					ID:     "domdomegg/test-server",
+			requestBody: v0.EditServerInput{
+				Server: apiv0.ServerJSON{
+					Name:        "io.github.domdomegg/test-server",
+					Description: "Updated test server",
+					Repository: model.Repository{
+						URL:    "https://github.com/domdomegg/test-server",
+						Source: "github",
+						ID:     "domdomegg/test-server",
+					},
+					Version: "1.0.0",
 				},
-				Version: "1.0.0",
+				Status: func() *string { s := "deprecated"; return &s }(),
 			},
-			serverID:       testServerID,
+			serverName:     testServerName,
 			version:        "1.0.0",
 			expectedStatus: http.StatusOK,
 		},
@@ -125,7 +126,7 @@ func TestEditServerEndpoint(t *testing.T) {
 			name:           "missing authorization header",
 			authHeader:     "",
 			requestBody:    apiv0.ServerJSON{},
-			serverID:       testServerID,
+			serverName:     testServerName,
 			version:        "1.0.0",
 			expectedStatus: 422,
 			expectedError:  "required header parameter is missing",
@@ -138,7 +139,7 @@ func TestEditServerEndpoint(t *testing.T) {
 				Description: "Test server",
 				Version:     "1.0.0",
 			},
-			serverID:       testServerID,
+			serverName:     testServerName,
 			version:        "1.0.0",
 			expectedStatus: http.StatusUnauthorized,
 			expectedError:  "Unauthorized",
@@ -151,7 +152,7 @@ func TestEditServerEndpoint(t *testing.T) {
 				Description: "Test server",
 				Version:     "1.0.0",
 			},
-			serverID:       testServerID,
+			serverName:     testServerName,
 			version:        "1.0.0",
 			expectedStatus: http.StatusUnauthorized,
 			expectedError:  "Unauthorized",
@@ -174,7 +175,7 @@ func TestEditServerEndpoint(t *testing.T) {
 				Description: "Updated test server",
 				Version:     "1.0.0",
 			},
-			serverID:       testServerID,
+			serverName:     testServerName,
 			version:        "1.0.0",
 			expectedStatus: http.StatusForbidden,
 			expectedError:  "Forbidden",
@@ -197,7 +198,7 @@ func TestEditServerEndpoint(t *testing.T) {
 				Description: "Updated test server",
 				Version:     "1.0.0",
 			},
-			serverID:       otherServerID,
+			serverName:     otherServerName,
 			version:        "1.0.0",
 			expectedStatus: http.StatusForbidden,
 			expectedError:  "Forbidden",
@@ -220,7 +221,7 @@ func TestEditServerEndpoint(t *testing.T) {
 				Description: "Updated test server",
 				Version:     "1.0.0",
 			},
-			serverID:       "550e8400-e29b-41d4-a716-446655440999", // Non-existent ID
+			serverName:     "io.github.domdomegg/nonexistent-server", // Non-existent server
 			version:        "1.0.0",
 			expectedStatus: http.StatusNotFound,
 			expectedError:  "Not Found",
@@ -243,7 +244,7 @@ func TestEditServerEndpoint(t *testing.T) {
 				Description: "Test server",
 				Version:     "1.0.0",
 			},
-			serverID:       testServerID,
+			serverName:     testServerName,
 			version:        "1.0.0",
 			expectedStatus: http.StatusBadRequest,
 			expectedError:  "Bad Request",
@@ -261,18 +262,20 @@ func TestEditServerEndpoint(t *testing.T) {
 				})
 				return "Bearer " + token
 			}(),
-			requestBody: apiv0.ServerJSON{
-				Name:        "io.github.domdomegg/deleted-server",
-				Description: "Trying to undelete server",
-				Status:      model.StatusActive,
-				Repository: model.Repository{
-					URL:    "https://github.com/domdomegg/deleted-server",
-					Source: "github",
-					ID:     "domdomegg/deleted-server",
+			requestBody: v0.EditServerInput{
+				Server: apiv0.ServerJSON{
+					Name:        "io.github.domdomegg/deleted-server",
+					Description: "Trying to undelete server",
+					Repository: model.Repository{
+						URL:    "https://github.com/domdomegg/deleted-server",
+						Source: "github",
+						ID:     "domdomegg/deleted-server",
+					},
+					Version: "1.0.1",
 				},
-				Version: "1.0.1",
+				Status: func() *string { s := "active"; return &s }(),
 			},
-			serverID:       deletedServerID,
+			serverName:     deletedServerName,
 			version:        "1.0.0",
 			expectedStatus: http.StatusBadRequest,
 			expectedError:  "Cannot change status of deleted server",
@@ -286,11 +289,11 @@ func TestEditServerEndpoint(t *testing.T) {
 			humaConfig := huma.DefaultConfig("Test API", "1.0.0")
 			api := humago.New(mux, humaConfig)
 
-			// Register edit endpoints
+			// Register server endpoints
 			cfg := &config.Config{
 				JWTPrivateKey: "bb2c6b424005acd5df47a9e2c87f446def86dd740c888ea3efb825b23f7ef47c",
 			}
-			v0.RegisterEditEndpoints(api, registryService, cfg)
+			v0.RegisterServersEndpoints(api, registryService, cfg)
 
 			// Create request body
 			var requestBody []byte
@@ -302,12 +305,10 @@ func TestEditServerEndpoint(t *testing.T) {
 				assert.NoError(t, err)
 			}
 
-			// Create request
-			url := "/v0/servers/" + tc.serverID
-			if tc.version != "" {
-				url += "?version=" + tc.version
-			}
-			req := httptest.NewRequest(http.MethodPut, url, bytes.NewReader(requestBody))
+			// Create request - try URL escaping back
+			urlPath := "/v0/servers/" + url.PathEscape(tc.serverName) + "/versions/" + tc.version
+			t.Logf("Request URL: %s", urlPath)
+			req := httptest.NewRequest(http.MethodPut, urlPath, bytes.NewReader(requestBody))
 			req.Header.Set("Content-Type", "application/json")
 			if tc.authHeader != "" {
 				req.Header.Set("Authorization", tc.authHeader)
@@ -320,6 +321,9 @@ func TestEditServerEndpoint(t *testing.T) {
 			mux.ServeHTTP(w, req)
 
 			// Check status code
+			if w.Code != tc.expectedStatus {
+				t.Logf("Response body: %s", w.Body.String())
+			}
 			assert.Equal(t, tc.expectedStatus, w.Code)
 
 			// Check error message if expected

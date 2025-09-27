@@ -16,7 +16,7 @@ import (
 
 func TestValidateNoDuplicateRemoteURLs(t *testing.T) {
 	// Create test data
-	existingServers := map[string]*apiv0.ServerJSON{
+	existingServers := map[string]apiv0.ServerJSON{
 		"existing1": {
 			Name:        "com.example/existing-server",
 			Description: "An existing server",
@@ -40,7 +40,7 @@ func TestValidateNoDuplicateRemoteURLs(t *testing.T) {
 	service := NewRegistryService(testDB, &config.Config{EnableRegistryValidation: false})
 
 	for _, server := range existingServers {
-		_, err := service.Publish(*server)
+		_, err := service.Publish(server)
 		if err != nil {
 			t.Fatalf("failed to publish server: %v", err)
 		}
@@ -107,7 +107,7 @@ func TestValidateNoDuplicateRemoteURLs(t *testing.T) {
 			ctx := context.Background()
 			impl := service.(*registryServiceImpl)
 
-			err := impl.validateNoDuplicateRemoteURLs(ctx, nil, tt.serverDetail)
+			err := impl.validateNoDuplicateRemoteURLs(ctx, nil, tt.serverDetail, tt.serverDetail.Name)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -119,12 +119,12 @@ func TestValidateNoDuplicateRemoteURLs(t *testing.T) {
 	}
 }
 
-func TestGetByServerID(t *testing.T) {
+func TestGetByServerName(t *testing.T) {
 	testDB := database.NewTestDB(t)
 	service := NewRegistryService(testDB, &config.Config{EnableRegistryValidation: false})
 
 	// Publish multiple versions of the same server
-	server1, err := service.Publish(apiv0.ServerJSON{
+	_, err := service.Publish(apiv0.ServerJSON{
 		Name:        "com.example/test-server",
 		Description: "Test server v1",
 		Version:     "1.0.0",
@@ -140,38 +140,33 @@ func TestGetByServerID(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		serverID    string
+		serverName  string
 		expectError bool
 		errorMsg    string
-		checkResult func(*testing.T, *apiv0.ServerJSON)
+		checkResult func(*testing.T, *apiv0.ServerResponse)
 	}{
 		{
-			name:        "get latest version by server ID",
-			serverID:    server1.Meta.Official.ServerID,
+			name:        "get latest version by server name",
+			serverName:  "com.example/test-server",
 			expectError: false,
-			checkResult: func(t *testing.T, result *apiv0.ServerJSON) {
+			checkResult: func(t *testing.T, result *apiv0.ServerResponse) {
 				t.Helper()
-				assert.Equal(t, "2.0.0", result.Version) // Should get latest version
-				assert.Equal(t, "Test server v2", result.Description)
+				assert.Equal(t, "2.0.0", result.Server.Version) // Should get latest version
+				assert.Equal(t, "Test server v2", result.Server.Description)
 				assert.True(t, result.Meta.Official.IsLatest)
 			},
 		},
 		{
 			name:        "server not found",
-			serverID:    "00000000-0000-0000-0000-000000000000",
+			serverName:  "com.example/nonexistent",
 			expectError: true,
 			errorMsg:    "record not found",
-		},
-		{
-			name:        "invalid server ID format",
-			serverID:    "invalid-uuid",
-			expectError: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := service.GetByServerID(tt.serverID)
+			result, err := service.GetByServerName(tt.serverName)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -190,12 +185,12 @@ func TestGetByServerID(t *testing.T) {
 	}
 }
 
-func TestGetByServerIDAndVersion(t *testing.T) {
+func TestGetByServerNameAndVersion(t *testing.T) {
 	testDB := database.NewTestDB(t)
 	service := NewRegistryService(testDB, &config.Config{EnableRegistryValidation: false})
 
 	// Publish multiple versions of the same server
-	server1, err := service.Publish(apiv0.ServerJSON{
+	_, err := service.Publish(apiv0.ServerJSON{
 		Name:        "com.example/versioned-server",
 		Description: "Versioned server v1",
 		Version:     "1.0.0",
@@ -211,61 +206,55 @@ func TestGetByServerIDAndVersion(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		serverID    string
+		serverName  string
 		version     string
 		expectError bool
 		errorMsg    string
-		checkResult func(*testing.T, *apiv0.ServerJSON)
+		checkResult func(*testing.T, *apiv0.ServerResponse)
 	}{
 		{
 			name:        "get specific version 1.0.0",
-			serverID:    server1.Meta.Official.ServerID,
+			serverName:  "com.example/versioned-server",
 			version:     "1.0.0",
 			expectError: false,
-			checkResult: func(t *testing.T, result *apiv0.ServerJSON) {
+			checkResult: func(t *testing.T, result *apiv0.ServerResponse) {
 				t.Helper()
-				assert.Equal(t, "1.0.0", result.Version)
-				assert.Equal(t, "Versioned server v1", result.Description)
+				assert.Equal(t, "1.0.0", result.Server.Version)
+				assert.Equal(t, "Versioned server v1", result.Server.Description)
 				assert.False(t, result.Meta.Official.IsLatest)
 			},
 		},
 		{
 			name:        "get specific version 2.0.0",
-			serverID:    server1.Meta.Official.ServerID,
+			serverName:  "com.example/versioned-server",
 			version:     "2.0.0",
 			expectError: false,
-			checkResult: func(t *testing.T, result *apiv0.ServerJSON) {
+			checkResult: func(t *testing.T, result *apiv0.ServerResponse) {
 				t.Helper()
-				assert.Equal(t, "2.0.0", result.Version)
-				assert.Equal(t, "Versioned server v2", result.Description)
+				assert.Equal(t, "2.0.0", result.Server.Version)
+				assert.Equal(t, "Versioned server v2", result.Server.Description)
 				assert.True(t, result.Meta.Official.IsLatest)
 			},
 		},
 		{
 			name:        "version not found",
-			serverID:    server1.Meta.Official.ServerID,
+			serverName:  "com.example/versioned-server",
 			version:     "3.0.0",
 			expectError: true,
 			errorMsg:    "record not found",
 		},
 		{
 			name:        "server not found",
-			serverID:    "00000000-0000-0000-0000-000000000000",
+			serverName:  "com.example/nonexistent",
 			version:     "1.0.0",
 			expectError: true,
 			errorMsg:    "record not found",
-		},
-		{
-			name:        "invalid server ID format",
-			serverID:    "invalid-uuid",
-			version:     "1.0.0",
-			expectError: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := service.GetByServerIDAndVersion(tt.serverID, tt.version)
+			result, err := service.GetByServerNameAndVersion(tt.serverName, tt.version)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -284,12 +273,12 @@ func TestGetByServerIDAndVersion(t *testing.T) {
 	}
 }
 
-func TestGetAllVersionsByServerID(t *testing.T) {
+func TestGetAllVersionsByServerName(t *testing.T) {
 	testDB := database.NewTestDB(t)
 	service := NewRegistryService(testDB, &config.Config{EnableRegistryValidation: false})
 
 	// Publish multiple versions of the same server
-	server1, err := service.Publish(apiv0.ServerJSON{
+	_, err := service.Publish(apiv0.ServerJSON{
 		Name:        "com.example/multi-version-server",
 		Description: "Multi-version server v1",
 		Version:     "1.0.0",
@@ -312,27 +301,26 @@ func TestGetAllVersionsByServerID(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		serverID    string
+		serverName  string
 		expectError bool
 		errorMsg    string
-		checkResult func(*testing.T, []apiv0.ServerJSON)
+		checkResult func(*testing.T, []*apiv0.ServerResponse)
 	}{
 		{
 			name:        "get all versions of server",
-			serverID:    server1.Meta.Official.ServerID,
+			serverName:  "com.example/multi-version-server",
 			expectError: false,
-			checkResult: func(t *testing.T, result []apiv0.ServerJSON) {
+			checkResult: func(t *testing.T, result []*apiv0.ServerResponse) {
 				t.Helper()
 				assert.Len(t, result, 3)
 
 				// Collect versions
 				versions := make([]string, 0, len(result))
 				latestCount := 0
-				for _, server := range result {
-					versions = append(versions, server.Version)
-					assert.Equal(t, server1.Meta.Official.ServerID, server.Meta.Official.ServerID)
-					assert.Equal(t, "com.example/multi-version-server", server.Name)
-					if server.Meta.Official.IsLatest {
+				for _, serverResp := range result {
+					versions = append(versions, serverResp.Server.Version)
+					assert.Equal(t, "com.example/multi-version-server", serverResp.Server.Name)
+					if serverResp.Meta.Official.IsLatest {
 						latestCount++
 					}
 				}
@@ -348,20 +336,15 @@ func TestGetAllVersionsByServerID(t *testing.T) {
 		},
 		{
 			name:        "server not found",
-			serverID:    "00000000-0000-0000-0000-000000000000",
+			serverName:  "com.example/nonexistent",
 			expectError: true,
 			errorMsg:    "record not found",
-		},
-		{
-			name:        "invalid server ID format",
-			serverID:    "invalid-uuid",
-			expectError: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := service.GetAllVersionsByServerID(tt.serverID)
+			result, err := service.GetAllVersionsByServerName(tt.serverName)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -385,7 +368,7 @@ func TestPublishConcurrentVersionsNoRace(t *testing.T) {
 	service := NewRegistryService(testDB, &config.Config{EnableRegistryValidation: false})
 
 	const concurrency = 100
-	results := make([]*apiv0.ServerJSON, concurrency)
+	results := make([]*apiv0.ServerResponse, concurrency)
 	errors := make([]error, concurrency)
 
 	var wg sync.WaitGroup
@@ -408,14 +391,11 @@ func TestPublishConcurrentVersionsNoRace(t *testing.T) {
 		assert.NoError(t, err, "publish %d failed", i)
 	}
 
-	var sharedServerID string
+	// Verify all results have the same server name
 	for i, result := range results {
-		if result != nil && result.Meta != nil && result.Meta.Official != nil {
-			if sharedServerID == "" {
-				sharedServerID = result.Meta.Official.ServerID
-			}
-			assert.Equal(t, sharedServerID, result.Meta.Official.ServerID,
-				"version %d has different serverID", i)
+		if result != nil {
+			assert.Equal(t, "com.example/test-concurrent", result.Server.Name,
+				"version %d has different server name", i)
 		}
 	}
 
@@ -429,9 +409,9 @@ func TestPublishConcurrentVersionsNoRace(t *testing.T) {
 	latestCount := 0
 	var latestVersion string
 	for _, r := range dbResults {
-		if r.Meta != nil && r.Meta.Official != nil && r.Meta.Official.IsLatest {
+		if r.Meta.Official != nil && r.Meta.Official.IsLatest {
 			latestCount++
-			latestVersion = r.Version
+			latestVersion = r.Server.Version
 		}
 	}
 

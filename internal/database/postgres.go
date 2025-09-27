@@ -79,7 +79,6 @@ func NewPostgreSQL(ctx context.Context, connectionURI string) (*PostgreSQL, erro
 	}, nil
 }
 
-//nolint:cyclop // Database filtering logic is inherently complex but clear
 func (db *PostgreSQL) List(
 	ctx context.Context,
 	tx pgx.Tx,

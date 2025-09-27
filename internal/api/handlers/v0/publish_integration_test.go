@@ -220,7 +220,6 @@ func TestPublishIntegration(t *testing.T) {
 			Name:        "io.github.domdomegg/airtable-mcp-server",
 			Description: "A test server with MCPB package",
 			Version: "1.7.2",
-			Status: model.StatusActive,
 			Packages: []model.Package{
 				{
 					RegistryType: model.RegistryTypeMCPB,

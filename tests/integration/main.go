@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -131,14 +132,14 @@ func publishToRegistry(expected *apiv0.ServerJSON, line int) error {
 	}
 	defer os.Remove(p)
 
-	id, err := runPublisher(p)
+	serverName, err := runPublisher(p)
 	if err != nil {
-		log.Printf("  ⛔ Failed to get server ID: %v", err)
+		log.Printf("  ⛔ Failed to get server name: %v", err)
 		return err
 	}
-	log.Printf("  📋 Got server ID: %s", id)
+	log.Printf("  📋 Got server name: %s", serverName)
 
-	return verifyPublishedServer(id, expected)
+	return verifyPublishedServer(serverName, expected)
 }
 
 func runPublisher(filePath string) (string, error) {
@@ -155,7 +156,7 @@ func runPublisher(filePath string) (string, error) {
 	}
 	log.Println("  ✅", output)
 
-	// Get the server name from the file to look up the ID
+	// Get the server name from the file to return directly
 	serverName, err := getServerNameFromFile(filePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to get server name from file: %w", err)
@@ -164,8 +165,9 @@ func runPublisher(filePath string) (string, error) {
 	// Add a small delay to ensure database consistency
 	time.Sleep(100 * time.Millisecond)
 
-	// Find the server in the registry by name
-	return findServerIDByName(serverName)
+	// Return the server name directly - no need to verify existence here
+	// since verifyPublishedServer will do the actual verification
+	return serverName, nil
 }
 
 func getServerNameFromFile(filePath string) (string, error) {
@@ -195,53 +197,12 @@ func getServerNameFromFile(filePath string) (string, error) {
 	return "", errors.New("could not find server name in file")
 }
 
-func findServerIDByName(serverName string) (string, error) {
+
+func verifyPublishedServer(serverName string, expected *apiv0.ServerJSON) error {
+	log.Printf("  🔍 Verifying server with name: %s", serverName)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, registryURL+"/v0/servers", nil)
-	if err != nil {
-		return "", err
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("registry responded %d: %s", resp.StatusCode, string(body))
-	}
-
-	var serverList *apiv0.ServerListResponse
-	if err := json.NewDecoder(resp.Body).Decode(&serverList); err != nil {
-		return "", fmt.Errorf("failed to decode server list: %w", err)
-	}
-
-	// Find the server with matching name
-	var foundServers []string
-	for _, server := range serverList.Servers {
-		if server.Name == serverName {
-			foundServers = append(foundServers, fmt.Sprintf("ServerID:%s VersionID:%s IsLatest:%t", server.Meta.Official.ServerID, server.Meta.Official.VersionID, server.Meta.Official.IsLatest))
-			if server.Meta.Official.IsLatest {
-				return server.Meta.Official.ServerID, nil
-			}
-		}
-	}
-
-	if len(foundServers) > 0 {
-		return "", fmt.Errorf("found server %s but none marked as latest: %v", serverName, foundServers)
-	}
-	return "", fmt.Errorf("could not find any server with name %s", serverName)
-}
-
-func verifyPublishedServer(id string, expected *apiv0.ServerJSON) error {
-	log.Printf("  🔍 Verifying server with ID: %s", id)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, registryURL+"/v0/servers/"+id, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, registryURL+"/v0/servers/"+url.PathEscape(serverName), nil)
 	if err != nil {
 		return err
 	}
@@ -258,12 +219,12 @@ func verifyPublishedServer(id string, expected *apiv0.ServerJSON) error {
 		return fmt.Errorf("registry responded %d: %s", res.StatusCode, string(content))
 	}
 
-	var actual *apiv0.ServerJSON
+	var actual *apiv0.ServerResponse
 	if err := json.Unmarshal(content, &actual); err != nil {
 		return fmt.Errorf("failed to unmarshal registry response: %w", err)
 	}
 
-	if err := compareServerJSON(expected, actual); err != nil {
+	if err := compareServerJSON(expected, &actual.Server, &actual.Meta); err != nil {
 		return fmt.Errorf(`example "%s": %w`, expected.Name, err)
 	}
 	return nil
@@ -304,7 +265,7 @@ func getExamples(path string) ([]example, error) {
 	return examples, nil
 }
 
-func compareServerJSON(expected, actual *apiv0.ServerJSON) error {
+func compareServerJSON(expected, actual *apiv0.ServerJSON, _ *apiv0.ResponseMeta) error {
 	// Compare core fields (ignore Meta as it contains registry-generated data)
 	if expected.Name != actual.Name {
 		return fmt.Errorf("name mismatch: expected %q, got %q", expected.Name, actual.Name)
@@ -312,9 +273,7 @@ func compareServerJSON(expected, actual *apiv0.ServerJSON) error {
 	if expected.Description != actual.Description {
 		return fmt.Errorf("description mismatch: expected %q, got %q", expected.Description, actual.Description)
 	}
-	if expected.Status != actual.Status {
-		return fmt.Errorf("status mismatch: expected %q, got %q", expected.Status, actual.Status)
-	}
+	// Note: Status is no longer compared as it's now in _meta.official.status which is registry-generated
 	if expected.Version != actual.Version {
 		return fmt.Errorf("version mismatch: expected %+v, got %+v", expected.Version, actual.Version)
 	}

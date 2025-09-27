@@ -16,8 +16,7 @@ func RegisterV0Routes(
 ) {
 	v0.RegisterHealthEndpoint(api, cfg, metrics)
 	v0.RegisterPingEndpoint(api)
-	v0.RegisterServersEndpoints(api, registry)
-	v0.RegisterEditEndpoints(api, registry, cfg)
+	v0.RegisterServersEndpoints(api, registry, cfg)
 	v0auth.RegisterAuthEndpoints(api, cfg)
 	v0.RegisterPublishEndpoint(api, registry, cfg)
 }

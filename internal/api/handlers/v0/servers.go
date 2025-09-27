@@ -4,13 +4,15 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/modelcontextprotocol/registry/internal/auth"
+	"github.com/modelcontextprotocol/registry/internal/config"
 	"github.com/modelcontextprotocol/registry/internal/database"
 	"github.com/modelcontextprotocol/registry/internal/service"
 	apiv0 "github.com/modelcontextprotocol/registry/pkg/api/v0"
-	"github.com/modelcontextprotocol/registry/pkg/model"
 )
 
 // ListServersInput represents the input for listing servers
@@ -38,32 +40,18 @@ type ServerVersionDetailInput struct {
 	Version    string `path:"version" doc:"Specific version to retrieve (e.g., '1.0.0')" example:"1.0.0"`
 }
 
-// UpdateServerStatusInput represents the input for updating server status (author only)
-type UpdateServerStatusInput struct {
-	ServerName string `path:"server_name" doc:"Server name (e.g., 'io.github.user/server-name')" example:"io.github.domdomegg/filesystem"`
-	Version    string `path:"version" doc:"Version to update (e.g., '1.0.0')" example:"1.0.0"`
-	Status     string `json:"status" doc:"New status (active or deprecated)" example:"deprecated" enum:"active,deprecated"`
-}
-
 // EditServerInput represents the input for editing server data (admin only)
 type EditServerInput struct {
-	ServerName string            `path:"server_name" doc:"Server name (e.g., 'io.github.user/server-name')" example:"io.github.domdomegg/filesystem"`
-	Version    string            `path:"version" doc:"Version to edit (e.g., '1.0.0')" example:"1.0.0"`
-	Server     apiv0.ServerJSON `json:"server" doc:"Updated server data"`
-	Status     *string           `json:"status,omitempty" doc:"Optional: update status (active, deprecated, deleted)" example:"deprecated" enum:"active,deprecated,deleted"`
+	ServerName    string           `path:"server_name" doc:"Server name (e.g., 'io.github.user/server-name')" example:"io.github.domdomegg/filesystem"`
+	Version       string           `path:"version" doc:"Version to edit (e.g., '1.0.0')" example:"1.0.0"`
+	Authorization string           `header:"Authorization" doc:"Registry JWT token (obtained from /v0/auth/token/github)" required:"true"`
+	Server        apiv0.ServerJSON `json:"server" doc:"Updated server data"`
+	Status        *string          `json:"status,omitempty" doc:"Optional: update status (active, deprecated, deleted)" example:"deprecated" enum:"active,deprecated,deleted"`
 }
 
-// RegisterServersEndpoints registers all server-related endpoints
-func RegisterServersEndpoints(api huma.API, registry service.RegistryService) {
-	// List servers endpoint
-	huma.Register(api, huma.Operation{
-		OperationID: "list-servers",
-		Method:      http.MethodGet,
-		Path:        "/v0/servers",
-		Summary:     "List MCP servers",
-		Description: "Get a paginated list of MCP servers from the registry",
-		Tags:        []string{"servers"},
-	}, func(_ context.Context, input *ListServersInput) (*Response[apiv0.ServerListResponse], error) {
+// listServersHandler handles the list servers endpoint
+func listServersHandler(registry service.RegistryService) func(context.Context, *ListServersInput) (*Response[apiv0.ServerListResponse], error) {
+	return func(_ context.Context, input *ListServersInput) (*Response[apiv0.ServerListResponse], error) {
 		// Build filter from input parameters
 		filter := &database.ServerFilter{}
 
@@ -115,21 +103,16 @@ func RegisterServersEndpoints(api huma.API, registry service.RegistryService) {
 				},
 			},
 		}, nil
-	})
+	}
+}
 
-	// Get server details endpoint (latest version)
-	huma.Register(api, huma.Operation{
-		OperationID: "get-server",
-		Method:      http.MethodGet,
-		Path:        "/v0/servers/{server_name}",
-		Summary:     "Get latest version of MCP server",
-		Description: "Get detailed information about the latest version of a specific MCP server.",
-		Tags:        []string{"servers"},
-	}, func(_ context.Context, input *ServerDetailInput) (*Response[apiv0.ServerResponse], error) {
+// getServerHandler handles the get server details endpoint (latest version)
+func getServerHandler(registry service.RegistryService) func(context.Context, *ServerDetailInput) (*Response[apiv0.ServerResponse], error) {
+	return func(_ context.Context, input *ServerDetailInput) (*Response[apiv0.ServerResponse], error) {
 		// Get latest version by server name
 		serverDetail, err := registry.GetByServerName(input.ServerName)
 		if err != nil {
-			if err.Error() == "record not found" || errors.Is(err, database.ErrNotFound) {
+			if errors.Is(err, database.ErrNotFound) {
 				return nil, huma.Error404NotFound("Server not found")
 			}
 			return nil, huma.Error500InternalServerError("Failed to get server details", err)
@@ -138,21 +121,16 @@ func RegisterServersEndpoints(api huma.API, registry service.RegistryService) {
 		return &Response[apiv0.ServerResponse]{
 			Body: *serverDetail,
 		}, nil
-	})
+	}
+}
 
-	// Get server versions endpoint
-	huma.Register(api, huma.Operation{
-		OperationID: "get-server-versions",
-		Method:      http.MethodGet,
-		Path:        "/v0/servers/{server_name}/versions",
-		Summary:     "Get all versions of an MCP server",
-		Description: "Get all available versions for a specific MCP server",
-		Tags:        []string{"servers"},
-	}, func(_ context.Context, input *ServerVersionsInput) (*Response[apiv0.ServerListResponse], error) {
+// getServerVersionsHandler handles the get server versions endpoint
+func getServerVersionsHandler(registry service.RegistryService) func(context.Context, *ServerVersionsInput) (*Response[apiv0.ServerListResponse], error) {
+	return func(_ context.Context, input *ServerVersionsInput) (*Response[apiv0.ServerListResponse], error) {
 		// Get all versions for this server
 		servers, err := registry.GetAllVersionsByServerName(input.ServerName)
 		if err != nil {
-			if err.Error() == "record not found" || errors.Is(err, database.ErrNotFound) {
+			if errors.Is(err, database.ErrNotFound) {
 				return nil, huma.Error404NotFound("Server not found")
 			}
 			return nil, huma.Error500InternalServerError("Failed to get server versions", err)
@@ -172,21 +150,16 @@ func RegisterServersEndpoints(api huma.API, registry service.RegistryService) {
 				},
 			},
 		}, nil
-	})
+	}
+}
 
-	// Get specific server version endpoint
-	huma.Register(api, huma.Operation{
-		OperationID: "get-server-version",
-		Method:      http.MethodGet,
-		Path:        "/v0/servers/{server_name}/versions/{version}",
-		Summary:     "Get specific version of MCP server",
-		Description: "Get detailed information about a specific version of an MCP server",
-		Tags:        []string{"servers"},
-	}, func(_ context.Context, input *ServerVersionDetailInput) (*Response[apiv0.ServerResponse], error) {
+// getServerVersionHandler handles the get specific server version endpoint
+func getServerVersionHandler(registry service.RegistryService) func(context.Context, *ServerVersionDetailInput) (*Response[apiv0.ServerResponse], error) {
+	return func(_ context.Context, input *ServerVersionDetailInput) (*Response[apiv0.ServerResponse], error) {
 		// Get specific version by server name and version
 		serverDetail, err := registry.GetByServerNameAndVersion(input.ServerName, input.Version)
 		if err != nil {
-			if err.Error() == "record not found" || errors.Is(err, database.ErrNotFound) {
+			if errors.Is(err, database.ErrNotFound) {
 				return nil, huma.Error404NotFound("Server version not found")
 			}
 			return nil, huma.Error500InternalServerError("Failed to get server version", err)
@@ -195,50 +168,37 @@ func RegisterServersEndpoints(api huma.API, registry service.RegistryService) {
 		return &Response[apiv0.ServerResponse]{
 			Body: *serverDetail,
 		}, nil
-	})
+	}
+}
 
-	// Update server status endpoint (author only)
-	huma.Register(api, huma.Operation{
-		OperationID: "update-server-status",
-		Method:      http.MethodPatch,
-		Path:        "/v0/servers/{server_name}/versions/{version}/status",
-		Summary:     "Update server status",
-		Description: "Update the status of a specific server version (author only - active ↔ deprecated)",
-		Tags:        []string{"servers"},
-	}, func(_ context.Context, input *UpdateServerStatusInput) (*Response[apiv0.ServerResponse], error) {
-		// TODO: Add auth middleware to verify caller is the author of the server (or admin)
-		// TODO: Verify namespace ownership (e.g., GitHub user owns the server name)
+// editServerHandler handles the edit server endpoint (admin only)
+func editServerHandler(registry service.RegistryService, cfg *config.Config) func(context.Context, *EditServerInput) (*Response[apiv0.ServerResponse], error) {
+	jwtManager := auth.NewJWTManager(cfg)
 
-		// Update server status
-		serverDetail, err := registry.UpdateServerStatus(input.ServerName, input.Version, input.Status)
+	return func(ctx context.Context, input *EditServerInput) (*Response[apiv0.ServerResponse], error) {
+		// Extract bearer token
+		const bearerPrefix = "Bearer "
+		authHeader := input.Authorization
+		if len(authHeader) < len(bearerPrefix) || !strings.EqualFold(authHeader[:len(bearerPrefix)], bearerPrefix) {
+			return nil, huma.Error401Unauthorized("Invalid Authorization header format. Expected 'Bearer <token>'")
+		}
+		token := authHeader[len(bearerPrefix):]
+
+		// Validate Registry JWT token
+		claims, err := jwtManager.ValidateToken(ctx, token)
 		if err != nil {
-			if err.Error() == "record not found" || errors.Is(err, database.ErrNotFound) {
-				return nil, huma.Error404NotFound("Server version not found")
-			}
-			return nil, huma.Error500InternalServerError("Failed to update server status", err)
+			return nil, huma.Error401Unauthorized("Invalid or expired Registry JWT token", err)
 		}
 
-		return &Response[apiv0.ServerResponse]{
-			Body: *serverDetail,
-		}, nil
-	})
-
-	// Edit server endpoint (admin only)
-	huma.Register(api, huma.Operation{
-		OperationID: "edit-server",
-		Method:      http.MethodPut,
-		Path:        "/v0/servers/{server_name}/versions/{version}",
-		Summary:     "Edit server data",
-		Description: "Edit server data and metadata (admin only - can edit all fields including any status transitions)",
-		Tags:        []string{"servers"},
-	}, func(_ context.Context, input *EditServerInput) (*Response[apiv0.ServerResponse], error) {
-		// TODO: Add auth middleware to verify caller is an admin
-		// TODO: Admin role verification
+		// Verify that the token has permission to edit the server (admin level - can edit any server)
+		if !jwtManager.HasPermission(input.ServerName, auth.PermissionActionEdit, claims.Permissions) {
+			return nil, huma.Error403Forbidden("Insufficient permissions to edit this server")
+		}
 
 		// Update the server data
 		serverDetail, err := registry.EditServer(input.ServerName, input.Version, input.Server)
 		if err != nil {
-			if err.Error() == "record not found" || errors.Is(err, database.ErrNotFound) {
+			if errors.Is(err, database.ErrNotFound) {
 				return nil, huma.Error404NotFound("Server version not found")
 			}
 			return nil, huma.Error500InternalServerError("Failed to edit server", err)
@@ -255,5 +215,61 @@ func RegisterServersEndpoints(api huma.API, registry service.RegistryService) {
 		return &Response[apiv0.ServerResponse]{
 			Body: *serverDetail,
 		}, nil
-	})
+	}
+}
+
+// RegisterServersEndpoints registers all server-related endpoints
+func RegisterServersEndpoints(api huma.API, registry service.RegistryService, cfg *config.Config) {
+	// List servers endpoint
+	huma.Register(api, huma.Operation{
+		OperationID: "list-servers",
+		Method:      http.MethodGet,
+		Path:        "/v0/servers",
+		Summary:     "List MCP servers",
+		Description: "Get a paginated list of MCP servers from the registry",
+		Tags:        []string{"servers"},
+	}, listServersHandler(registry))
+
+	// Get server details endpoint (latest version)
+	huma.Register(api, huma.Operation{
+		OperationID: "get-server",
+		Method:      http.MethodGet,
+		Path:        "/v0/servers/{server_name}",
+		Summary:     "Get latest version of MCP server",
+		Description: "Get detailed information about the latest version of a specific MCP server.",
+		Tags:        []string{"servers"},
+	}, getServerHandler(registry))
+
+	// Get server versions endpoint
+	huma.Register(api, huma.Operation{
+		OperationID: "get-server-versions",
+		Method:      http.MethodGet,
+		Path:        "/v0/servers/{server_name}/versions",
+		Summary:     "Get all versions of an MCP server",
+		Description: "Get all available versions for a specific MCP server",
+		Tags:        []string{"servers"},
+	}, getServerVersionsHandler(registry))
+
+	// Get specific server version endpoint
+	huma.Register(api, huma.Operation{
+		OperationID: "get-server-version",
+		Method:      http.MethodGet,
+		Path:        "/v0/servers/{server_name}/versions/{version}",
+		Summary:     "Get specific version of MCP server",
+		Description: "Get detailed information about a specific version of an MCP server",
+		Tags:        []string{"servers"},
+	}, getServerVersionHandler(registry))
+
+	// Edit server endpoint (admin only)
+	huma.Register(api, huma.Operation{
+		OperationID: "edit-server",
+		Method:      http.MethodPut,
+		Path:        "/v0/servers/{server_name}/versions/{version}",
+		Summary:     "Edit server data",
+		Description: "Edit server data and metadata (admin only - can edit all fields including any status transitions)",
+		Tags:        []string{"servers"},
+		Security: []map[string][]string{
+			{"bearer": {}},
+		},
+	}, editServerHandler(registry, cfg))
 }
